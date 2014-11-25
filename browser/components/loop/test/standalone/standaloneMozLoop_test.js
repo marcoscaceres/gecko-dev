@@ -46,25 +46,41 @@ describe("loop.StandaloneMozLoop", function() {
     });
   });
 
+<<<<<<< HEAD
   describe("#setLoopCharPref", function() {
+=======
+  describe("#setLoopPref", function() {
+>>>>>>> upstream/master
     afterEach(function() {
       localStorage.removeItem("fakePref");
     });
 
     it("should store the value of the preference", function() {
+<<<<<<< HEAD
       mozLoop.setLoopCharPref("fakePref", "fakeValue");
+=======
+      mozLoop.setLoopPref("fakePref", "fakeValue");
+>>>>>>> upstream/master
 
       expect(localStorage.getItem("fakePref")).eql("fakeValue");
     });
 
     it("should not store the value of seenToS", function() {
+<<<<<<< HEAD
       mozLoop.setLoopCharPref("seenToS", "fakeValue1");
+=======
+      mozLoop.setLoopPref("seenToS", "fakeValue1");
+>>>>>>> upstream/master
 
       expect(localStorage.getItem("seenToS")).eql(null);
     });
   });
 
+<<<<<<< HEAD
   describe("#getLoopCharPref", function() {
+=======
+  describe("#getLoopPref", function() {
+>>>>>>> upstream/master
     afterEach(function() {
       localStorage.removeItem("fakePref");
     });
@@ -72,7 +88,11 @@ describe("loop.StandaloneMozLoop", function() {
     it("should return the value of the preference", function() {
       localStorage.setItem("fakePref", "fakeValue");
 
+<<<<<<< HEAD
       expect(mozLoop.getLoopCharPref("fakePref")).eql("fakeValue");
+=======
+      expect(mozLoop.getLoopPref("fakePref")).eql("fakeValue");
+>>>>>>> upstream/master
     });
   });
 

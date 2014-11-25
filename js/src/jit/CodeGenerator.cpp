@@ -4321,6 +4321,50 @@ CodeGenerator::visitNewArrayCopyOnWrite(LNewArrayCopyOnWrite *lir)
     return true;
 }
 
+typedef ArrayObject *(*ArrayConstructorOneArgFn)(JSContext *, HandleTypeObject, int32_t length);
+static const VMFunction ArrayConstructorOneArgInfo =
+    FunctionInfo<ArrayConstructorOneArgFn>(ArrayConstructorOneArg);
+
+bool
+CodeGenerator::visitNewArrayDynamicLength(LNewArrayDynamicLength *lir)
+{
+    Register lengthReg = ToRegister(lir->length());
+    Register objReg = ToRegister(lir->output());
+    Register tempReg = ToRegister(lir->temp());
+
+    ArrayObject *templateObject = lir->mir()->templateObject();
+    gc::InitialHeap initialHeap = lir->mir()->initialHeap();
+
+    OutOfLineCode *ool = oolCallVM(ArrayConstructorOneArgInfo, lir,
+                                   (ArgList(), ImmGCPtr(templateObject->type()), lengthReg),
+                                   StoreRegisterTo(objReg));
+    if (!ool)
+        return false;
+
+    size_t numSlots = gc::GetGCKindSlots(templateObject->asTenured().getAllocKind());
+    size_t inlineLength = numSlots >= ObjectElements::VALUES_PER_HEADER
+                        ? numSlots - ObjectElements::VALUES_PER_HEADER
+                        : 0;
+
+    // Try to do the allocation inline if the template object is big enough
+    // for the length in lengthReg. If the length is bigger we could still
+    // use the template object and not allocate the elements, but it's more
+    // efficient to do a single big allocation than (repeatedly) reallocating
+    // the array later on when filling it.
+    if (!templateObject->hasSingletonType() && templateObject->length() <= inlineLength)
+        masm.branch32(Assembler::Above, lengthReg, Imm32(templateObject->length()), ool->entry());
+    else
+        masm.jump(ool->entry());
+
+    masm.createGCObject(objReg, tempReg, templateObject, initialHeap, ool->entry());
+
+    size_t lengthOffset = NativeObject::offsetOfFixedElements() + ObjectElements::offsetOfLength();
+    masm.store32(lengthReg, Address(objReg, lengthOffset));
+
+    masm.bind(ool->rejoin());
+    return true;
+}
+
 // Out-of-line object allocation for JSOP_NEWOBJECT.
 class OutOfLineNewObject : public OutOfLineCodeBase<CodeGenerator>
 {
@@ -6014,6 +6058,8 @@ bool CodeGenerator::visitSubstr(LSubstr *lir)
     Register length = ToRegister(lir->length());
     Register output = ToRegister(lir->output());
     Register temp = ToRegister(lir->temp());
+    Register temp2 = ToRegister(lir->temp2());
+    Register temp3 = ToRegister(lir->temp3());
     Address stringFlags(string, JSString::offsetOfFlags());
 
     Label isLatin1, notInline, nonZero, isInlinedLatin1;
@@ -6058,9 +6104,10 @@ bool CodeGenerator::visitSubstr(LSubstr *lir)
                      Address(output, JSString::offsetOfFlags()));
         masm.computeEffectiveAddress(stringStorage, temp);
         BaseIndex chars(temp, begin, ScaleFromElemWidth(sizeof(char16_t)));
-        masm.computeEffectiveAddress(chars, begin);
+        masm.computeEffectiveAddress(chars, temp2);
         masm.computeEffectiveAddress(outputStorage, temp);
-        CopyStringChars(masm, temp, begin, length, string, sizeof(char16_t), sizeof(char16_t));
+        CopyStringChars(masm, temp, temp2, length, temp3, sizeof(char16_t), sizeof(char16_t));
+        masm.load32(Address(output, JSString::offsetOfLength()), length);
         masm.store16(Imm32(0), Address(temp, 0));
         masm.jump(done);
     }
@@ -6068,11 +6115,12 @@ bool CodeGenerator::visitSubstr(LSubstr *lir)
     {
         masm.store32(Imm32(JSString::INIT_FAT_INLINE_FLAGS | JSString::LATIN1_CHARS_BIT),
                      Address(output, JSString::offsetOfFlags()));
-        masm.computeEffectiveAddress(stringStorage, temp);
+        masm.computeEffectiveAddress(stringStorage, temp2);
         static_assert(sizeof(char) == 1, "begin index shouldn't need scaling");
-        masm.addPtr(temp, begin);
+        masm.addPtr(begin, temp2);
         masm.computeEffectiveAddress(outputStorage, temp);
-        CopyStringChars(masm, temp, begin, length, string, sizeof(char), sizeof(char));
+        CopyStringChars(masm, temp, temp2, length, temp3, sizeof(char), sizeof(char));
+        masm.load32(Address(output, JSString::offsetOfLength()), length);
         masm.store8(Imm32(0), Address(temp, 0));
         masm.jump(done);
     }
@@ -9061,13 +9109,34 @@ CodeGenerator::visitLoadUnboxedPointerT(LLoadUnboxedPointerT *lir)
     const LAllocation *index = lir->index();
     Register out = ToRegister(lir->output());
 
-    if (index->isConstant()) {
-        int32_t offset = ToInt32(index) * sizeof(uintptr_t) + lir->mir()->offsetAdjustment();
-        masm.loadPtr(Address(elements, offset), out);
+    bool bailOnNull;
+    int32_t offsetAdjustment;
+    if (lir->mir()->isLoadUnboxedObjectOrNull()) {
+        MOZ_ASSERT(lir->mir()->toLoadUnboxedObjectOrNull()->bailOnNull());
+        bailOnNull = true;
+        offsetAdjustment = lir->mir()->toLoadUnboxedObjectOrNull()->offsetAdjustment();
+    } else if (lir->mir()->isLoadUnboxedString()) {
+        bailOnNull = false;
+        offsetAdjustment = lir->mir()->toLoadUnboxedString()->offsetAdjustment();
     } else {
-        masm.loadPtr(BaseIndex(elements, ToRegister(index), ScalePointer,
-                               lir->mir()->offsetAdjustment()), out);
+        MOZ_CRASH();
     }
+
+    if (index->isConstant()) {
+        Address source(elements, ToInt32(index) * sizeof(uintptr_t) + offsetAdjustment);
+        masm.loadPtr(source, out);
+    } else {
+        BaseIndex source(elements, ToRegister(index), ScalePointer, offsetAdjustment);
+        masm.loadPtr(source, out);
+    }
+
+    if (bailOnNull) {
+        Label bail;
+        masm.branchTestPtr(Assembler::Zero, out, out, &bail);
+        if (!bailoutFrom(&bail, lir->snapshot()))
+            return false;
+    }
+
     return true;
 }
 
@@ -10181,12 +10250,10 @@ CodeGenerator::visitDebugger(LDebugger *ins)
     Register cx = ToRegister(ins->getTemp(0));
     Register temp = ToRegister(ins->getTemp(1));
 
-    // The check for cx->compartment()->isDebuggee() could be inlined, but the
-    // performance of |debugger;| does not matter.
     masm.loadJSContext(cx);
     masm.setupUnalignedABICall(1, temp);
     masm.passABIArg(cx);
-    masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, IsCompartmentDebuggee));
+    masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, GlobalHasLiveOnDebuggerStatement));
 
     Label bail;
     masm.branchIfTrueBool(ReturnReg, &bail);

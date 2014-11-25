@@ -199,7 +199,11 @@ loop.StandaloneMozLoop = (function(mozL10n) {
      * @param {String} prefName The name of the pref
      * @param {String} value The value to set.
      */
+<<<<<<< HEAD
     setLoopCharPref: function(prefName, value) {
+=======
+    setLoopPref: function(prefName, value) {
+>>>>>>> upstream/master
       if (prefName === "seenToS") {
         return;
       }
@@ -213,7 +217,11 @@ loop.StandaloneMozLoop = (function(mozL10n) {
      * @param {String} prefName The name of the pref
      * @param {String} value The value to set.
      */
+<<<<<<< HEAD
     getLoopCharPref: function(prefName) {
+=======
+    getLoopPref: function(prefName) {
+>>>>>>> upstream/master
       return localStorage.getItem(prefName);
     }
   };

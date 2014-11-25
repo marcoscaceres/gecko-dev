@@ -40,7 +40,7 @@ loop.panel = (function(_, mozL10n) {
       // getDefaultProps (bug 1100258).
       return {
         selectedTab: this.props.selectedTab ||
-          (navigator.mozLoop.getLoopBoolPref("rooms.enabled") ?
+          (navigator.mozLoop.getLoopPref("rooms.enabled") ?
             "rooms" : "call")
       };
     },
@@ -165,16 +165,15 @@ loop.panel = (function(_, mozL10n) {
   });
 
   var GettingStartedView = React.createClass({displayName: 'GettingStartedView',
-    componentDidMount: function() {
-      navigator.mozLoop.setLoopBoolPref("gettingStarted.seen", true);
-    },
-
     handleButtonClick: function() {
-      navigator.mozLoop.openGettingStartedTour();
+      navigator.mozLoop.openGettingStartedTour("getting-started");
+      navigator.mozLoop.setLoopPref("gettingStarted.seen", true);
+      var event = new CustomEvent("GettingStartedSeen");
+      window.dispatchEvent(event);
     },
 
     render: function() {
-      if (navigator.mozLoop.getLoopBoolPref("gettingStarted.seen")) {
+      if (navigator.mozLoop.getLoopPref("gettingStarted.seen")) {
         return null;
       }
       return (
@@ -194,14 +193,14 @@ loop.panel = (function(_, mozL10n) {
 
   var ToSView = React.createClass({displayName: 'ToSView',
     getInitialState: function() {
-      return {seenToS: navigator.mozLoop.getLoopCharPref('seenToS')};
+      return {seenToS: navigator.mozLoop.getLoopPref("seenToS")};
     },
 
     render: function() {
       if (this.state.seenToS == "unseen") {
         var locale = mozL10n.getLanguage();
-        var terms_of_use_url = navigator.mozLoop.getLoopCharPref('legal.ToS_url');
-        var privacy_notice_url = navigator.mozLoop.getLoopCharPref('legal.privacy_url');
+        var terms_of_use_url = navigator.mozLoop.getLoopPref('legal.ToS_url');
+        var privacy_notice_url = navigator.mozLoop.getLoopPref('legal.privacy_url');
         var tosHTML = mozL10n.get("legal_text_and_links3", {
           "clientShortname": mozL10n.get("clientShortname2"),
           "terms_of_use": React.renderComponentToStaticMarkup(
@@ -286,6 +285,10 @@ loop.panel = (function(_, mozL10n) {
       return !!navigator.mozLoop.userProfile;
     },
 
+    openGettingStartedTour: function() {
+      navigator.mozLoop.openGettingStartedTour("settings-menu");
+    },
+
     render: function() {
       var cx = React.addons.classSet;
 
@@ -308,6 +311,8 @@ loop.panel = (function(_, mozL10n) {
                                    onClick: this.handleClickAccountEntry, 
                                    icon: "account", 
                                    displayed: this._isSignedIn()}), 
+            SettingsDropdownEntry({label: mozL10n.get("tour_label"), 
+                                   onClick: this.openGettingStartedTour}), 
             SettingsDropdownEntry({label: this._isSignedIn() ?
                                           mozL10n.get("settings_menu_item_signout") :
                                           mozL10n.get("settings_menu_item_signin"), 
@@ -688,6 +693,7 @@ loop.panel = (function(_, mozL10n) {
     getInitialState: function() {
       return {
         userProfile: this.props.userProfile || navigator.mozLoop.userProfile,
+        gettingStartedSeen: navigator.mozLoop.getLoopPref("gettingStarted.seen"),
       };
     },
 
@@ -720,7 +726,7 @@ loop.panel = (function(_, mozL10n) {
     },
 
     _roomsEnabled: function() {
-      return navigator.mozLoop.getLoopBoolPref("rooms.enabled");
+      return navigator.mozLoop.getLoopPref("rooms.enabled");
     },
 
     _onStatusChanged: function() {
@@ -735,6 +741,12 @@ loop.panel = (function(_, mozL10n) {
       this.updateServiceErrors();
     },
 
+    _gettingStartedSeen: function() {
+      this.setState({
+        gettingStartedSeen: navigator.mozLoop.getLoopPref("gettingStarted.seen"),
+      });
+    },
+
     /**
      * The rooms feature is hidden by default for now. Once it gets mainstream,
      * this method can be simplified.
@@ -744,7 +756,6 @@ loop.panel = (function(_, mozL10n) {
         return (
           Tab({name: "call"}, 
             React.DOM.div({className: "content-area"}, 
-              GettingStartedView(null), 
               CallUrlResult({client: this.props.client, 
                              notifications: this.props.notifications, 
                              callUrl: this.props.callUrl}), 
@@ -756,7 +767,6 @@ loop.panel = (function(_, mozL10n) {
 
       return (
         Tab({name: "rooms"}, 
-          GettingStartedView(null), 
           RoomList({dispatcher: this.props.dispatcher, 
                     store: this.props.roomStore, 
                     userDisplayName: this._getUserDisplayName()}), 
@@ -780,10 +790,12 @@ loop.panel = (function(_, mozL10n) {
 
     componentDidMount: function() {
       window.addEventListener("LoopStatusChanged", this._onStatusChanged);
+      window.addEventListener("GettingStartedSeen", this._gettingStartedSeen);
     },
 
     componentWillUnmount: function() {
       window.removeEventListener("LoopStatusChanged", this._onStatusChanged);
+      window.removeEventListener("GettingStartedSeen", this._gettingStartedSeen);
     },
 
     _getUserDisplayName: function() {
@@ -793,6 +805,17 @@ loop.panel = (function(_, mozL10n) {
 
     render: function() {
       var NotificationListView = sharedViews.NotificationListView;
+
+      if (!this.state.gettingStartedSeen) {
+        return (
+          React.DOM.div(null, 
+            NotificationListView({notifications: this.props.notifications, 
+                                  clearOnDocumentHidden: true}), 
+            GettingStartedView(null), 
+            ToSView(null)
+          )
+        );
+      }
 
       return (
         React.DOM.div(null, 
@@ -845,9 +868,8 @@ loop.panel = (function(_, mozL10n) {
     var client = new loop.Client();
     var notifications = new sharedModels.NotificationCollection();
     var dispatcher = new loop.Dispatcher();
-    var roomStore = new loop.store.RoomStore({
-      mozLoop: navigator.mozLoop,
-      dispatcher: dispatcher
+    var roomStore = new loop.store.RoomStore(dispatcher, {
+      mozLoop: navigator.mozLoop
     });
 
     React.renderComponent(PanelView({

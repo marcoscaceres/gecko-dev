@@ -22,6 +22,13 @@ devtools.lazyRequireGetter(this, "L10N",
   "devtools/profiler/global", true);
 devtools.lazyImporter(this, "LineGraphWidget",
   "resource:///modules/devtools/Graphs.jsm");
+<<<<<<< HEAD
+=======
+devtools.lazyRequireGetter(this, "CallView",
+  "devtools/profiler/tree-view", true);
+devtools.lazyRequireGetter(this, "ThreadNode",
+  "devtools/profiler/tree-model", true);
+>>>>>>> upstream/master
 
 // Events emitted by the `PerformanceController`
 const EVENTS = {
@@ -36,7 +43,14 @@ const EVENTS = {
   UI_STOP_RECORDING: "Performance:UI:StopRecording",
 
   // Emitted by the OverviewView when more data has been rendered
+<<<<<<< HEAD
   OVERVIEW_RENDERED: "Performance:UI:OverviewRendered"
+=======
+  OVERVIEW_RENDERED: "Performance:UI:OverviewRendered",
+
+  // Emitted by the CallTreeView when a call tree has been rendered
+  CALL_TREE_RENDERED: "Performance:UI:CallTreeRendered"
+>>>>>>> upstream/master
 };
 
 /**
@@ -147,6 +161,7 @@ EventEmitter.decorate(PerformanceController);
  * Shortcuts for accessing various profiler preferences.
  */
 const Prefs = new ViewHelpers.Prefs("devtools.profiler", {
+  showPlatformData: ["Bool", "ui.show-platform-data"]
 });
 
 /**

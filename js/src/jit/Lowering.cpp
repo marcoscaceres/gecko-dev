@@ -1996,13 +1996,13 @@ LIRGenerator::visitToString(MToString *ins)
 
     switch (opd->type()) {
       case MIRType_Null: {
-        const JSAtomState &names = GetIonContext()->runtime->names();
+        const JSAtomState &names = GetJitContext()->runtime->names();
         LPointer *lir = new(alloc()) LPointer(names.null);
         return define(lir, ins);
       }
 
       case MIRType_Undefined: {
-        const JSAtomState &names = GetIonContext()->runtime->names();
+        const JSAtomState &names = GetJitContext()->runtime->names();
         LPointer *lir = new(alloc()) LPointer(names.undefined);
         return define(lir, ins);
       }
@@ -2182,21 +2182,6 @@ LIRGenerator::visitStringReplace(MStringReplace *ins)
 }
 
 bool
-LIRGenerator::visitSubstr(MSubstr *ins)
-{
-    // The last temporary need to be a register that can handle 8bit moves, but
-    // there is no way to signal that to register allocator, except to give a
-    // fixed temporary that is able to do this.
-    LSubstr *lir = new (alloc()) LSubstr(useRegister(ins->string()),
-                                         useRegister(ins->begin()),
-                                         useRegister(ins->length()),
-                                         temp(),
-                                         temp(),
-                                         tempFixed(CallTempReg1));
-    return define(lir, ins) && assignSafepoint(lir, ins);
-}
-
-bool
 LIRGenerator::visitLambda(MLambda *ins)
 {
     if (ins->info().singletonType || ins->info().useNewTypeForClone) {
@@ -2328,7 +2313,7 @@ bool
 LIRGenerator::visitInterruptCheck(MInterruptCheck *ins)
 {
     // Implicit interrupt checks require asm.js signal handlers to be installed.
-    if (GetIonContext()->runtime->canUseSignalHandlers()) {
+    if (GetJitContext()->runtime->canUseSignalHandlers()) {
         LInterruptCheckImplicit *lir = new(alloc()) LInterruptCheckImplicit();
         return add(lir, ins) && assignSafepoint(lir, ins);
     }

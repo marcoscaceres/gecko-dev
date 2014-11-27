@@ -214,7 +214,7 @@ loop.panel = (function(_, mozL10n) {
             )
           ),
         });
-        return React.DOM.div(null, 
+        return React.DOM.div({id: "powered-by-wrapper"}, 
           React.DOM.p({id: "powered-by"}, 
             mozL10n.get("powered_by_beforeLogo"), 
             React.DOM.img({id: "powered-by-logo", className: locale}), 
@@ -587,8 +587,10 @@ loop.panel = (function(_, mozL10n) {
             React.DOM.span({className: "room-notification"}), 
             room.roomName, 
             React.DOM.button({className: copyButtonClasses, 
+              title: mozL10n.get("rooms_list_copy_url_tooltip"), 
               onClick: this.handleCopyButtonClick}), 
             React.DOM.button({className: "delete-link", 
+              title: mozL10n.get("rooms_list_delete_tooltip"), 
               onClick: this.handleDeleteButtonClick})
           ), 
           React.DOM.p(null, 

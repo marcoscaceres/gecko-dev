@@ -19,8 +19,8 @@
 this.DEBUG_ALL = false;
 
 // Set individually to debug specific layers
-this.DEBUG_CONTENT_HELPER = false || DEBUG_ALL;
-this.DEBUG_NFC = false || DEBUG_ALL;
+this.DEBUG_CONTENT_HELPER = DEBUG_ALL || false;
+this.DEBUG_NFC = DEBUG_ALL || false;
 
 // Gecko specific error codes
 this.NFC_GECKO_SUCCESS = 0;
@@ -51,6 +51,7 @@ this.PEER_EVENT_LOST  = 0x02;
 this.TAG_EVENT_FOUND = 0x03;
 this.TAG_EVENT_LOST  = 0x04;
 this.PEER_EVENT_FOUND = 0x05;
+this.RF_EVENT_STATE_CHANGE = 0x06;
 
 // Allow this file to be imported via Components.utils.import().
 this.EXPORTED_SYMBOLS = Object.keys(this);

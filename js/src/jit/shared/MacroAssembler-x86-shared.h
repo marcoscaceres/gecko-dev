@@ -1202,10 +1202,10 @@ class MacroAssemblerX86Shared : public Assembler
         call(reg);
         append(desc, currentOffset(), framePushed_);
     }
-    void callIon(Register callee) {
+    void callJit(Register callee) {
         call(callee);
     }
-    void callIonFromAsmJS(Register callee) {
+    void callJitFromAsmJS(Register callee) {
         call(callee);
     }
     void call(AsmJSImmPtr target) {

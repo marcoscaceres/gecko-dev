@@ -323,7 +323,7 @@ pref("browser.urlbar.autoFill", true);
 pref("browser.urlbar.autoFill.typed", true);
 
 // Use the new unifiedComplete component
-pref("browser.urlbar.unifiedcomplete", true);
+pref("browser.urlbar.unifiedcomplete", false);
 
 // 0: Match anywhere (e.g., middle of words)
 // 1: Match on word boundaries and then try matching anywhere
@@ -421,6 +421,8 @@ pref("browser.search.update.interval", 21600);
 
 // enable search suggestions by default
 pref("browser.search.suggest.enabled", true);
+
+pref("browser.search.showOneOffButtons", true);
 
 #ifdef MOZ_OFFICIAL_BRANDING
 // {moz:official} expands to "official"
@@ -1647,8 +1649,8 @@ pref("loop.seenToS", "unseen");
 pref("loop.gettingStarted.seen", false);
 pref("loop.gettingStarted.url", "https://www.mozilla.org/%LOCALE%/firefox/%VERSION%/hello/start");
 pref("loop.learnMoreUrl", "https://www.firefox.com/hello/");
-pref("loop.legal.ToS_url", "https://hello.firefox.com/legal/terms/");
-pref("loop.legal.privacy_url", "https://www.mozilla.org/privacy/");
+pref("loop.legal.ToS_url", "https://www.mozilla.org/about/legal/terms/firefox-hello/");
+pref("loop.legal.privacy_url", "https://www.mozilla.org/privacy/firefox-hello/");
 pref("loop.do_not_disturb", false);
 pref("loop.ringtone", "chrome://browser/content/loop/shared/sounds/ringtone.ogg");
 pref("loop.retry_delay.start", 60000);
@@ -1742,7 +1744,11 @@ pref("ui.key.menuAccessKeyFocuses", true);
 #endif
 
 // Encrypted media extensions.
+#ifdef RELEASE_BUILD
 pref("media.eme.enabled", false);
+#else
+pref("media.eme.enabled", true);
+#endif
 
 // GMPInstallManager prefs
 

@@ -18,8 +18,8 @@
 #include "jit/AtomicOp.h"
 #include "jit/FixedList.h"
 #include "jit/InlineList.h"
-#include "jit/IonAllocPolicy.h"
-#include "jit/IonMacroAssembler.h"
+#include "jit/JitAllocPolicy.h"
+#include "jit/MacroAssembler.h"
 #include "jit/MOpcodes.h"
 #include "jit/TypedObjectPrediction.h"
 #include "jit/TypePolicy.h"
@@ -839,8 +839,8 @@ class MUseDefIterator
     }
 };
 
-typedef Vector<MDefinition *, 8, IonAllocPolicy> MDefinitionVector;
-typedef Vector<MInstruction *, 6, IonAllocPolicy> MInstructionVector;
+typedef Vector<MDefinition *, 8, JitAllocPolicy> MDefinitionVector;
+typedef Vector<MInstruction *, 6, JitAllocPolicy> MInstructionVector;
 
 // An instruction is an SSA name that is inserted into a basic block's IR
 // stream.
@@ -2156,11 +2156,11 @@ class MTableSwitch MOZ_FINAL
     // The successors of the tableswitch
     // - First successor = the default case
     // - Successor 2 and higher = the cases sorted on case index.
-    Vector<MBasicBlock*, 0, IonAllocPolicy> successors_;
-    Vector<size_t, 0, IonAllocPolicy> cases_;
+    Vector<MBasicBlock*, 0, JitAllocPolicy> successors_;
+    Vector<size_t, 0, JitAllocPolicy> cases_;
 
     // Contains the blocks/cases that still need to get build
-    Vector<MBasicBlock*, 0, IonAllocPolicy> blocks_;
+    Vector<MBasicBlock*, 0, JitAllocPolicy> blocks_;
 
     MUse operand_;
     int32_t low_;
@@ -3870,7 +3870,7 @@ JSOpToCondition(MCompare::CompareType compareType, JSOp op)
 // Takes a typed value and checks if it is a certain type. If so, the payload
 // is unpacked and returned as that type. Otherwise, it is considered a
 // deoptimization.
-class MUnbox : public MUnaryInstruction, public BoxInputsPolicy::Data
+class MUnbox MOZ_FINAL : public MUnaryInstruction, public BoxInputsPolicy::Data
 {
   public:
     enum Mode {
@@ -6222,7 +6222,7 @@ class MLoadArrowThis
 
 class MPhi MOZ_FINAL : public MDefinition, public InlineListNode<MPhi>
 {
-    js::Vector<MUse, 2, IonAllocPolicy> inputs_;
+    js::Vector<MUse, 2, JitAllocPolicy> inputs_;
 
     TruncateKind truncateKind_;
     bool hasBackedgeType_;
@@ -9020,8 +9020,8 @@ class MStoreFixedSlot
     ALLOW_CLONE(MStoreFixedSlot)
 };
 
-typedef Vector<JSObject *, 4, IonAllocPolicy> ObjectVector;
-typedef Vector<bool, 4, IonAllocPolicy> BoolVector;
+typedef Vector<JSObject *, 4, JitAllocPolicy> ObjectVector;
+typedef Vector<bool, 4, JitAllocPolicy> BoolVector;
 
 class InlinePropertyTable : public TempObject
 {
@@ -9036,7 +9036,7 @@ class InlinePropertyTable : public TempObject
 
     jsbytecode *pc_;
     MResumePoint *priorResumePoint_;
-    Vector<Entry *, 4, IonAllocPolicy> entries_;
+    Vector<Entry *, 4, JitAllocPolicy> entries_;
 
   public:
     InlinePropertyTable(TempAllocator &alloc, jsbytecode *pc)
@@ -9204,7 +9204,7 @@ class MGetPropertyPolymorphic
         Shape *shape;
     };
 
-    Vector<Entry, 4, IonAllocPolicy> shapes_;
+    Vector<Entry, 4, JitAllocPolicy> shapes_;
     AlwaysTenuredPropertyName name_;
 
     MGetPropertyPolymorphic(TempAllocator &alloc, MDefinition *obj, PropertyName *name)
@@ -9275,7 +9275,7 @@ class MSetPropertyPolymorphic
         Shape *shape;
     };
 
-    Vector<Entry, 4, IonAllocPolicy> shapes_;
+    Vector<Entry, 4, JitAllocPolicy> shapes_;
     bool needsBarrier_;
 
     MSetPropertyPolymorphic(TempAllocator &alloc, MDefinition *obj, MDefinition *value)
@@ -9337,7 +9337,7 @@ class MDispatchInstruction
           : func(func), block(block)
         { }
     };
-    Vector<Entry, 4, IonAllocPolicy> map_;
+    Vector<Entry, 4, JitAllocPolicy> map_;
 
     // An optional fallback path that uses MCall.
     MBasicBlock *fallback_;
@@ -9603,7 +9603,7 @@ class MGuardShapePolymorphic
   : public MUnaryInstruction,
     public SingleObjectPolicy::Data
 {
-    Vector<Shape *, 4, IonAllocPolicy> shapes_;
+    Vector<Shape *, 4, JitAllocPolicy> shapes_;
 
     MGuardShapePolymorphic(TempAllocator &alloc, MDefinition *obj)
       : MUnaryInstruction(obj),
@@ -10139,11 +10139,13 @@ class MDeleteProperty
     public BoxInputsPolicy::Data
 {
     AlwaysTenuredPropertyName name_;
+    bool strict_;
 
   protected:
-    MDeleteProperty(MDefinition *val, PropertyName *name)
+    MDeleteProperty(MDefinition *val, PropertyName *name, bool strict)
       : MUnaryInstruction(val),
-        name_(name)
+        name_(name),
+        strict_(strict)
     {
         setResultType(MIRType_Boolean);
     }
@@ -10151,8 +10153,10 @@ class MDeleteProperty
   public:
     INSTRUCTION_HEADER(DeleteProperty)
 
-    static MDeleteProperty *New(TempAllocator &alloc, MDefinition *obj, PropertyName *name) {
-        return new(alloc) MDeleteProperty(obj, name);
+    static MDeleteProperty *New(TempAllocator &alloc, MDefinition *obj, PropertyName *name,
+                                bool strict)
+    {
+        return new(alloc) MDeleteProperty(obj, name, strict);
     }
     MDefinition *value() const {
         return getOperand(0);
@@ -10160,14 +10164,20 @@ class MDeleteProperty
     PropertyName *name() const {
         return name_;
     }
+    bool strict() const {
+        return strict_;
+    }
 };
 
 class MDeleteElement
   : public MBinaryInstruction,
     public BoxInputsPolicy::Data
 {
-    MDeleteElement(MDefinition *value, MDefinition *index)
-      : MBinaryInstruction(value, index)
+    bool strict_;
+
+    MDeleteElement(MDefinition *value, MDefinition *index, bool strict)
+      : MBinaryInstruction(value, index),
+        strict_(strict)
     {
         setResultType(MIRType_Boolean);
     }
@@ -10175,14 +10185,19 @@ class MDeleteElement
   public:
     INSTRUCTION_HEADER(DeleteElement)
 
-    static MDeleteElement *New(TempAllocator &alloc, MDefinition *value, MDefinition *index) {
-        return new(alloc) MDeleteElement(value, index);
+    static MDeleteElement *New(TempAllocator &alloc, MDefinition *value, MDefinition *index,
+                               bool strict)
+    {
+        return new(alloc) MDeleteElement(value, index, strict);
     }
     MDefinition *value() const {
         return getOperand(0);
     }
     MDefinition *index() const {
         return getOperand(1);
+    }
+    bool strict() const {
+        return strict_;
     }
 };
 
@@ -10448,22 +10463,17 @@ class MSetDOMProperty
 };
 
 class MGetDOMProperty
-  : public MAryInstruction<2>,
+  : public MVariadicInstruction,
     public ObjectPolicy<0>::Data
 {
     const JSJitInfo *info_;
 
   protected:
-    MGetDOMProperty(const JSJitInfo *jitinfo, MDefinition *obj, MDefinition *guard)
+    MGetDOMProperty(const JSJitInfo *jitinfo)
       : info_(jitinfo)
     {
         MOZ_ASSERT(jitinfo);
         MOZ_ASSERT(jitinfo->type() == JSJitInfo::Getter);
-
-        initOperand(0, obj);
-
-        // Pin the guard as an operand if we want to hoist later
-        initOperand(1, guard);
 
         // We are movable iff the jitinfo says we can be.
         if (isDomMovable()) {
@@ -10483,13 +10493,41 @@ class MGetDOMProperty
         return info_;
     }
 
+    bool init(TempAllocator &alloc, MDefinition *obj, MDefinition *guard,
+              MDefinition *globalGuard) {
+        MOZ_ASSERT(obj);
+        MOZ_ASSERT(guard);
+        // globalGuard can be null.
+        size_t operandCount;
+        if (globalGuard)
+            operandCount = 3;
+        else
+            operandCount = 2;
+
+        if (!MVariadicInstruction::init(alloc, operandCount))
+            return false;
+        initOperand(0, obj);
+
+        // Pin the guard as an operand if we want to hoist later.
+        initOperand(1, guard);
+
+        // And the same for the global guard, if we have one.
+        if (globalGuard)
+            initOperand(2, globalGuard);
+
+        return true;
+    }
+
   public:
     INSTRUCTION_HEADER(GetDOMProperty)
 
     static MGetDOMProperty *New(TempAllocator &alloc, const JSJitInfo *info, MDefinition *obj,
-                                MDefinition *guard)
+                                MDefinition *guard, MDefinition *globalGuard)
     {
-        return new(alloc) MGetDOMProperty(info, obj, guard);
+        MGetDOMProperty *res = new(alloc) MGetDOMProperty(info);
+        if (!res || !res->init(alloc, obj, guard, globalGuard))
+            return nullptr;
+        return res;
     }
 
     JSJitGetterOp fun() const {
@@ -10547,8 +10585,8 @@ class MGetDOMProperty
 class MGetDOMMember : public MGetDOMProperty
 {
     // We inherit everything from MGetDOMProperty except our possiblyCalls value
-    MGetDOMMember(const JSJitInfo *jitinfo, MDefinition *obj, MDefinition *guard)
-        : MGetDOMProperty(jitinfo, obj, guard)
+    MGetDOMMember(const JSJitInfo *jitinfo)
+        : MGetDOMProperty(jitinfo)
     {
     }
 
@@ -10556,9 +10594,12 @@ class MGetDOMMember : public MGetDOMProperty
     INSTRUCTION_HEADER(GetDOMMember)
 
     static MGetDOMMember *New(TempAllocator &alloc, const JSJitInfo *info, MDefinition *obj,
-                              MDefinition *guard)
+                              MDefinition *guard, MDefinition *globalGuard)
     {
-        return new(alloc) MGetDOMMember(info, obj, guard);
+        MGetDOMMember *res = new(alloc) MGetDOMMember(info);
+        if (!res || !res->init(alloc, obj, guard, globalGuard))
+            return nullptr;
+        return res;
     }
 
     bool possiblyCalls() const {

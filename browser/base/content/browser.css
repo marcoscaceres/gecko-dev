@@ -415,6 +415,15 @@ panel[noactions] > richlistbox > richlistitem[type~="action"] > .ac-url-box > .a
   -moz-binding: url("chrome://browser/content/urlbarBindings.xml#browser-autocomplete-result-popup");
 }
 
+#PopupSearchAutoComplete {
+  -moz-binding: url("chrome://browser/content/urlbarBindings.xml#browser-search-autocomplete-result-popup");
+  margin-left: -23px;
+}
+
+searchbar[oneoffui] {
+  -moz-binding: url("chrome://browser/content/search/search.xml#searchbar-flare") !important;
+}
+
 #PopupAutoCompleteRichResult {
   -moz-binding: url("chrome://browser/content/urlbarBindings.xml#urlbar-rich-result-popup");
 }
@@ -1108,14 +1117,14 @@ toolbarpaletteitem[dragover] {
 
 #customization-palette:not([hidden]) {
   display: block;
-  flex: 1 1 main-size;
+  flex: 1 1 auto;
   overflow: auto;
   min-height: 3em;
 }
 
 #customization-footer-spacer,
 #customization-spacer {
-  flex: 1 1 main-size;
+  flex: 1 1 auto;
 }
 
 #customization-footer {

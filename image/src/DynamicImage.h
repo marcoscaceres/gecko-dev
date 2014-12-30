@@ -14,7 +14,6 @@ namespace mozilla {
 namespace image {
 
 /**
- 
  * An Image that is dynamically created. The content of the image is provided by
  * a gfxDrawable. It's anticipated that most uses of DynamicImage will be
  * ephemeral.
@@ -36,8 +35,8 @@ public:
 
   virtual already_AddRefed<ProgressTracker> GetProgressTracker() MOZ_OVERRIDE;
   virtual nsIntRect FrameRect(uint32_t aWhichFrame) MOZ_OVERRIDE;
-
-  virtual size_t SizeOfSourceWithComputedFallback(MallocSizeOf aMallocSizeOf) const MOZ_OVERRIDE;
+  virtual size_t SizeOfSourceWithComputedFallback(
+                                 MallocSizeOf aMallocSizeOf) const MOZ_OVERRIDE;
   virtual size_t SizeOfDecoded(gfxMemoryLocation aLocation,
                                MallocSizeOf aMallocSizeOf) const MOZ_OVERRIDE;
 
@@ -57,6 +56,8 @@ public:
                                        nsresult aStatus,
                                        bool aLastPart) MOZ_OVERRIDE;
   virtual nsresult OnNewSourceData() MOZ_OVERRIDE;
+
+  virtual void OnSurfaceDiscarded() MOZ_OVERRIDE;
 
   virtual void SetInnerWindowID(uint64_t aInnerWindowId) MOZ_OVERRIDE;
   virtual uint64_t InnerWindowID() const MOZ_OVERRIDE;

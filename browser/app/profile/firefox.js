@@ -404,6 +404,13 @@ pref("browser.search.order.1",                "chrome://browser-region/locale/re
 pref("browser.search.order.2",                "chrome://browser-region/locale/region.properties");
 pref("browser.search.order.3",                "chrome://browser-region/locale/region.properties");
 
+// Market-specific search defaults (US market only)
+pref("browser.search.geoSpecificDefaults", true);
+pref("browser.search.defaultenginename.US",      "data:text/plain,browser.search.defaultenginename.US=Yahoo");
+pref("browser.search.order.US.1",                "data:text/plain,browser.search.order.US.1=Yahoo");
+pref("browser.search.order.US.2",                "data:text/plain,browser.search.order.US.2=Google");
+pref("browser.search.order.US.3",                "data:text/plain,browser.search.order.US.3=Bing");
+
 // search bar results always open in a new tab
 pref("browser.search.openintab", false);
 
@@ -428,6 +435,15 @@ pref("browser.search.showOneOffButtons", true);
 // {moz:official} expands to "official"
 pref("browser.search.official", true);
 #endif
+
+// How many times to show the new search highlight
+pref("browser.search.highlightCount", 5);
+
+// geoip end-point and timeout
+pref("browser.search.geoip.url", "https://location.services.mozilla.com/v1/country?key=%MOZILLA_API_KEY%");
+// NOTE: this timeout figure is also the "high" value for the telemetry probe
+// SEARCH_SERVICE_COUNTRY_FETCH_MS - if you change this also change that probe.
+pref("browser.search.geoip.timeout", 2000);
 
 pref("browser.sessionhistory.max_entries", 50);
 
@@ -1195,20 +1211,25 @@ pref("dom.ipc.plugins.enabled", true);
 pref("browser.tabs.remote.autostart", false);
 pref("browser.tabs.remote.desktopbehavior", true);
 
-#if defined(MOZ_CONTENT_SANDBOX) && defined(XP_WIN)
-// This controls whether the content process on Windows is sandboxed.
-// You also need to be using remote tabs, see above.
-// on = full sandbox enabled
-// warn = warn only sandbox enabled
-// anything else = sandbox disabled
-// This will probably require a restart.
-pref("browser.tabs.remote.sandbox", "off");
+#if defined(XP_WIN) && defined(MOZ_SANDBOX)
+// When this pref is true the Windows process sandbox will set up dummy
+// interceptions and log to the browser console when calls fail in the sandboxed
+// process and also if they are subsequently allowed by the broker process.
+// This will require a restart.
+pref("security.sandbox.windows.log", false);
+
+#if defined(MOZ_CONTENT_SANDBOX)
+// This controls whether the Windows content process sandbox is using a more
+// strict sandboxing policy.  This will require a restart.
+pref("security.sandbox.windows.content.moreStrict", false);
 
 #if defined(MOZ_STACKWALKING)
-// This controls the depth of stack trace that is logged when the warn only
-// sandbox reports that a resource access request has been blocked.
-// This does not require a restart to take effect.
-pref("browser.tabs.remote.sandbox.warnOnlyStackTraceDepth", 0);
+// This controls the depth of stack trace that is logged when Windows sandbox
+// logging is turned on.  This is only currently available for the content
+// process because the only other sandbox (for GMP) has too strict a policy to
+// allow stack tracing.  This does not require a restart to take effect.
+pref("security.sandbox.windows.log.stackTraceDepth", 0);
+#endif
 #endif
 #endif
 
@@ -1409,9 +1430,11 @@ pref("devtools.debugger.ui.variables-sorting-enabled", true);
 pref("devtools.debugger.ui.variables-only-enum-visible", false);
 pref("devtools.debugger.ui.variables-searchbox-visible", false);
 
-// Enable the Profiler and the Timeline
+// Enable the Profiler
 pref("devtools.profiler.enabled", true);
-#ifdef MOZ_DEV_EDITION
+
+// Timeline panel settings
+#ifdef NIGHTLY_BUILD
 pref("devtools.timeline.enabled", true);
 #else
 pref("devtools.timeline.enabled", false);
@@ -1493,9 +1516,9 @@ pref("devtools.gcli.hideIntro", false);
 pref("devtools.gcli.eagerHelper", 2);
 
 // Alias to the script URLs for inject command.
-pref("devtools.gcli.jquerySrc", "http://ajax.googleapis.com/ajax/libs/jquery/2.1.1/jquery.min.js");
-pref("devtools.gcli.lodashSrc", "http://cdnjs.cloudflare.com/ajax/libs/lodash.js/2.4.1/lodash.min.js");
-pref("devtools.gcli.underscoreSrc", "http://cdnjs.cloudflare.com/ajax/libs/underscore.js/1.6.0/underscore-min.js");
+pref("devtools.gcli.jquerySrc", "https://ajax.googleapis.com/ajax/libs/jquery/2.1.1/jquery.min.js");
+pref("devtools.gcli.lodashSrc", "https://cdnjs.cloudflare.com/ajax/libs/lodash.js/2.4.1/lodash.min.js");
+pref("devtools.gcli.underscoreSrc", "https://cdnjs.cloudflare.com/ajax/libs/underscore.js/1.7.0/underscore-min.js");
 
 // Remember the Web Console filters
 pref("devtools.webconsole.filter.network", true);
@@ -1647,7 +1670,8 @@ pref("loop.enabled", true);
 pref("loop.server", "https://loop.services.mozilla.com/v0");
 pref("loop.seenToS", "unseen");
 pref("loop.gettingStarted.seen", false);
-pref("loop.gettingStarted.url", "https://www.mozilla.org/%LOCALE%/firefox/%VERSION%/hello/start");
+pref("loop.gettingStarted.url", "https://www.mozilla.org/%LOCALE%/firefox/%VERSION%/hello/start/");
+pref("loop.gettingStarted.resumeOnFirstJoin", false);
 pref("loop.learnMoreUrl", "https://www.firefox.com/hello/");
 pref("loop.legal.ToS_url", "https://www.mozilla.org/about/legal/terms/firefox-hello/");
 pref("loop.legal.privacy_url", "https://www.mozilla.org/privacy/firefox-hello/");
@@ -1817,7 +1841,7 @@ pref("privacy.trackingprotection.ui.enabled", false);
 #endif
 
 #ifdef NIGHTLY_BUILD
-pref("browser.tabs.remote.autostart.1", false);
+pref("browser.tabs.remote.autostart.1", true);
 #endif
 
 // Temporary pref to allow printing in e10s windows on some platforms.
@@ -1833,3 +1857,6 @@ pref("extensions.interposition.enabled", true);
 #endif
 
 pref("browser.defaultbrowser.notificationbar", false);
+
+// How many milliseconds to wait for a CPOW response from the child process.
+pref("dom.ipc.cpow.timeout", 0);

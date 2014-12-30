@@ -170,6 +170,7 @@
 @RESPATH@/components/browser-element.xpt
 @RESPATH@/browser/components/browsercompsbase.xpt
 @RESPATH@/browser/components/browser-feeds.xpt
+@RESPATH@/browser/components/browsermodules.manifest
 @RESPATH@/components/caps.xpt
 @RESPATH@/components/chrome.xpt
 @RESPATH@/components/commandhandler.xpt
@@ -541,6 +542,8 @@
 @RESPATH@/components/Identity.manifest
 @RESPATH@/components/recording-cmdline.js
 @RESPATH@/components/recording-cmdline.manifest
+@RESPATH@/components/htmlMenuBuilder.js
+@RESPATH@/components/htmlMenuBuilder.manifest
 
 @RESPATH@/components/PermissionSettings.js
 @RESPATH@/components/PermissionSettings.manifest

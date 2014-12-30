@@ -59,6 +59,7 @@
 #include "mozilla/EventListenerManager.h"
 #include "mozilla/EventStates.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/PendingPlayerTracker.h"
 #include "mozilla/dom/DOMImplementation.h"
 #include "mozilla/dom/StyleSheetList.h"
 #include "nsDataHashtable.h"
@@ -930,8 +931,8 @@ public:
   virtual void RemoveFromRadioGroup(const nsAString& aName,
                                     nsIFormControl* aRadio) MOZ_OVERRIDE;
   virtual uint32_t GetRequiredRadioCount(const nsAString& aName) const MOZ_OVERRIDE;
-  virtual void RadioRequiredChanged(const nsAString& aName,
-                                    nsIFormControl* aRadio) MOZ_OVERRIDE;
+  virtual void RadioRequiredWillChange(const nsAString& aName,
+                                       bool aRequiredAdded) MOZ_OVERRIDE;
   virtual bool GetValueMissingState(const nsAString& aName) const MOZ_OVERRIDE;
   virtual void SetValueMissingState(const nsAString& aName, bool aValue) MOZ_OVERRIDE;
 
@@ -1046,6 +1047,15 @@ public:
   // Returns our (lazily-initialized) animation controller.
   // If HasAnimationController is true, this is guaranteed to return non-null.
   nsSMILAnimationController* GetAnimationController() MOZ_OVERRIDE;
+
+  virtual mozilla::PendingPlayerTracker*
+  GetPendingPlayerTracker() MOZ_FINAL
+  {
+    return mPendingPlayerTracker;
+  }
+
+  virtual mozilla::PendingPlayerTracker*
+  GetOrCreatePendingPlayerTracker() MOZ_OVERRIDE;
 
   void SetImagesNeedAnimating(bool aAnimating) MOZ_OVERRIDE;
 
@@ -1511,6 +1521,10 @@ protected:
   // Array of observers
   nsTObserverArray<nsIDocumentObserver*> mObservers;
 
+  // Tracker for animation players that are waiting to start.
+  // nullptr until GetOrCreatePendingPlayerTracker is called.
+  nsRefPtr<mozilla::PendingPlayerTracker> mPendingPlayerTracker;
+
   // Weak reference to the scope object (aka the script global object)
   // that, unlike mScriptGlobalObject, is never unset once set. This
   // is a weak reference to avoid leaks due to circular references.
@@ -1543,11 +1557,12 @@ private:
 public:
   static void ProcessBaseElementQueue();
 
-  // Modify the prototype and "is" attribute of newly created custom elements.
-  virtual void SwizzleCustomElement(Element* aElement,
-                                    const nsAString& aTypeExtension,
-                                    uint32_t aNamespaceID,
-                                    mozilla::ErrorResult& rv);
+  // Enqueue created callback or register upgrade candidate for
+  // newly created custom elements, possibly extending an existing type.
+  // ex. <x-button>, <button is="x-button> (type extension)
+  virtual void SetupCustomElement(Element* aElement,
+                                  uint32_t aNamespaceID,
+                                  const nsAString* aTypeExtension);
 
   static bool IsWebComponentsEnabled(JSContext* aCx, JSObject* aObject);
 

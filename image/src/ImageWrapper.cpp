@@ -93,13 +93,20 @@ ImageWrapper::OnImageDataComplete(nsIRequest* aRequest,
                                   nsresult aStatus,
                                   bool aLastPart)
 {
-  return mInnerImage->OnImageDataComplete(aRequest, aContext, aStatus, aLastPart);
+  return mInnerImage->OnImageDataComplete(aRequest, aContext, aStatus,
+                                          aLastPart);
 }
 
 nsresult
 ImageWrapper::OnNewSourceData()
 {
   return mInnerImage->OnNewSourceData();
+}
+
+void
+ImageWrapper::OnSurfaceDiscarded()
+{
+  return mInnerImage->OnSurfaceDiscarded();
 }
 
 void
@@ -198,7 +205,8 @@ ImageWrapper::IsOpaque()
 }
 
 NS_IMETHODIMP
-ImageWrapper::GetImageContainer(LayerManager* aManager, ImageContainer** _retval)
+ImageWrapper::GetImageContainer(LayerManager* aManager,
+                                ImageContainer** _retval)
 {
   return mInnerImage->GetImageContainer(aManager, _retval);
 }
@@ -299,10 +307,12 @@ ImageWrapper::SetAnimationStartTime(const TimeStamp& aTime)
 }
 
 nsIntSize
-ImageWrapper::OptimalImageSizeForDest(const gfxSize& aDest, uint32_t aWhichFrame,
+ImageWrapper::OptimalImageSizeForDest(const gfxSize& aDest,
+                                      uint32_t aWhichFrame,
                                       GraphicsFilter aFilter, uint32_t aFlags)
 {
-  return mInnerImage->OptimalImageSizeForDest(aDest, aWhichFrame, aFilter, aFlags);
+  return mInnerImage->OptimalImageSizeForDest(aDest, aWhichFrame, aFilter,
+                                              aFlags);
 }
 
 NS_IMETHODIMP_(nsIntRect)

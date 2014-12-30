@@ -291,13 +291,14 @@ GetMetricsFor(nsPresContext* aPresContext,
   gfxFont::Orientation orientation = gfxFont::eHorizontal;
   if (aStyleContext) {
     WritingMode wm(aStyleContext);
-    if (wm.IsVertical()) {
+    if (wm.IsVertical() && !wm.IsSideways()) {
       orientation = gfxFont::eVertical;
     }
   }
   nsRefPtr<nsFontMetrics> fm;
   aPresContext->DeviceContext()->GetMetricsFor(font,
                                                aStyleFont->mLanguage,
+                                               aStyleFont->mExplicitLanguage,
                                                orientation,
                                                fs, tp, *getter_AddRefs(fm));
   return fm.forget();
@@ -2502,7 +2503,7 @@ nsRuleNode::SetDefaultOnRoot(const nsStyleStructID aSID, nsStyleContext* aContex
     }
     case eStyleStruct_TableBorder:
     {
-      nsStyleTableBorder* table = new (mPresContext) nsStyleTableBorder(mPresContext);
+      nsStyleTableBorder* table = new (mPresContext) nsStyleTableBorder();
       aContext->SetStyle(eStyleStruct_TableBorder, table);
       return table;
     }
@@ -4367,6 +4368,13 @@ nsRuleNode::ComputeTextData(void* aStartStruct,
               parentText->mHyphens,
               NS_STYLE_HYPHENS_MANUAL, 0, 0, 0, 0);
 
+  // ruby-position: enum, inherit, initial
+  SetDiscrete(*aRuleData->ValueForRubyPosition(),
+              text->mRubyPosition, canStoreInRuleTree,
+              SETDSC_ENUMERATED | SETDSC_UNSET_INHERIT,
+              parentText->mRubyPosition,
+              NS_STYLE_RUBY_POSITION_INITIAL, 0, 0, 0, 0);
+
   // text-size-adjust: none, auto, inherit, initial
   SetDiscrete(*aRuleData->ValueForTextSizeAdjust(), text->mTextSizeAdjust,
               canStoreInRuleTree,
@@ -4376,13 +4384,6 @@ nsRuleNode::ComputeTextData(void* aStartStruct,
               NS_STYLE_TEXT_SIZE_ADJUST_AUTO, // auto value
               NS_STYLE_TEXT_SIZE_ADJUST_NONE, // none value
               0, 0);
-
-  // text-orientation: enum, inherit, initial
-  SetDiscrete(*aRuleData->ValueForTextOrientation(), text->mTextOrientation,
-              canStoreInRuleTree,
-              SETDSC_ENUMERATED | SETDSC_UNSET_INHERIT,
-              parentText->mTextOrientation,
-              NS_STYLE_TEXT_ORIENTATION_MIXED, 0, 0, 0, 0);
 
   // text-combine-upright: enum, inherit, initial
   SetDiscrete(*aRuleData->ValueForTextCombineUpright(),
@@ -5847,6 +5848,13 @@ nsRuleNode::ComputeVisibilityData(void* aStartStruct,
               SETDSC_ENUMERATED | SETDSC_UNSET_INHERIT,
               parentVisibility->mWritingMode,
               NS_STYLE_WRITING_MODE_HORIZONTAL_TB, 0, 0, 0, 0);
+
+  // text-orientation: enum, inherit, initial
+  SetDiscrete(*aRuleData->ValueForTextOrientation(), visibility->mTextOrientation,
+              canStoreInRuleTree,
+              SETDSC_ENUMERATED | SETDSC_UNSET_INHERIT,
+              parentVisibility->mTextOrientation,
+              NS_STYLE_TEXT_ORIENTATION_MIXED, 0, 0, 0, 0);
 
   // image-orientation: enum, inherit, initial
   const nsCSSValue* orientation = aRuleData->ValueForImageOrientation();
@@ -7872,7 +7880,7 @@ nsRuleNode::ComputeTableBorderData(void* aStartStruct,
                                    const RuleDetail aRuleDetail,
                                    const bool aCanStoreInRuleTree)
 {
-  COMPUTE_START_INHERITED(TableBorder, (mPresContext), table, parentTable)
+  COMPUTE_START_INHERITED(TableBorder, (), table, parentTable)
 
   // border-collapse: enum, inherit, initial
   SetDiscrete(*aRuleData->ValueForBorderCollapse(), table->mBorderCollapse,
@@ -7916,9 +7924,7 @@ nsRuleNode::ComputeTableBorderData(void* aStartStruct,
               table->mEmptyCells, canStoreInRuleTree,
               SETDSC_ENUMERATED | SETDSC_UNSET_INHERIT,
               parentTable->mEmptyCells,
-              (mPresContext->CompatibilityMode() == eCompatibility_NavQuirks)
-              ? NS_STYLE_TABLE_EMPTY_CELLS_SHOW_BACKGROUND
-              : NS_STYLE_TABLE_EMPTY_CELLS_SHOW,
+              NS_STYLE_TABLE_EMPTY_CELLS_SHOW,
               0, 0, 0, 0);
 
   COMPUTE_END_INHERITED(TableBorder, table)

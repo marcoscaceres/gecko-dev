@@ -185,8 +185,10 @@ static uint32_t sForgetSkippableBeforeCC = 0;
 static uint32_t sPreviousSuspectedCount = 0;
 static uint32_t sCleanupsSinceLastGC = UINT32_MAX;
 static bool sNeedsFullCC = false;
+static bool sNeedsFullGC = false;
 static bool sNeedsGCAfterCC = false;
 static bool sIncrementalCC = false;
+static bool sDidPaintAfterPreviousICCSlice = false;
 
 static nsScriptNameSpaceManager *gNameSpaceManager;
 
@@ -1461,7 +1463,13 @@ nsJSContext::GarbageCollectNow(JS::gcreason::Reason aReason,
     return;
   }
 
-  JS::PrepareForFullGC(sRuntime);
+  if (sNeedsFullGC || aReason != JS::gcreason::CC_WAITING) {
+    sNeedsFullGC = false;
+    JS::PrepareForFullGC(sRuntime);
+  } else {
+    CycleCollectedJSRuntime::Get()->PrepareWaitingZonesForGC();
+  }
+
   if (aIncremental == IncrementalGC) {
     MOZ_ASSERT(aShrinking == NonShrinkingGC);
     JS::IncrementalGC(sRuntime, aReason, aSliceMillis);
@@ -1708,7 +1716,8 @@ nsJSContext::RunCycleCollectorSlice()
     }
   }
 
-  nsCycleCollector_collectSlice(budget);
+  nsCycleCollector_collectSlice(budget, sDidPaintAfterPreviousICCSlice);
+  sDidPaintAfterPreviousICCSlice = false;
 
   gCCStats.FinishCycleCollectionSlice();
 }
@@ -2147,6 +2156,8 @@ nsJSContext::RunNextCollectorTimer()
 void
 nsJSContext::PokeGC(JS::gcreason::Reason aReason, int aDelay)
 {
+  sNeedsFullGC = sNeedsFullGC || aReason != JS::gcreason::CC_WAITING;
+
   if (sGCTimer || sInterSliceGCTimer || sShuttingDown) {
     // There's already a timer for GC'ing, just return
     return;
@@ -2289,12 +2300,6 @@ nsJSContext::KillICCTimer()
     sICCTimer->Cancel();
     NS_RELEASE(sICCTimer);
   }
-}
-
-void
-nsJSContext::GC(JS::gcreason::Reason aReason)
-{
-  PokeGC(aReason);
 }
 
 class NotifyGCEndRunnable : public nsRunnable
@@ -2456,6 +2461,7 @@ mozilla::dom::StartupJSEnvironment()
   sLikelyShortLivingObjectsNeedingGC = 0;
   sPostGCEventsToConsole = false;
   sNeedsFullCC = false;
+  sNeedsFullGC = false;
   sNeedsGCAfterCC = false;
   gNameSpaceManager = nullptr;
   sRuntimeService = nullptr;
@@ -2742,7 +2748,7 @@ nsJSContext::EnsureStatics()
   sPrevGCSliceCallback = JS::SetGCSliceCallback(sRuntime, DOMGCSliceCallback);
 
   // Set up the structured clone callbacks.
-  static JSStructuredCloneCallbacks cloneCallbacks = {
+  static const JSStructuredCloneCallbacks cloneCallbacks = {
     NS_DOMReadStructuredClone,
     NS_DOMWriteStructuredClone,
     NS_DOMStructuredCloneError,
@@ -2753,7 +2759,7 @@ nsJSContext::EnsureStatics()
   JS_SetStructuredCloneCallbacks(sRuntime, &cloneCallbacks);
 
   // Set up the asm.js cache callbacks
-  static JS::AsmJSCacheOps asmJSCacheOps = {
+  static const JS::AsmJSCacheOps asmJSCacheOps = {
     AsmJSCacheOpenEntryForRead,
     asmjscache::CloseEntryForRead,
     AsmJSCacheOpenEntryForWrite,
@@ -2854,6 +2860,12 @@ nsJSContext::EnsureStatics()
   }
 
   sIsInitialized = true;
+}
+
+void
+nsJSContext::NotifyDidPaint()
+{
+  sDidPaintAfterPreviousICCSlice = true;
 }
 
 nsScriptNameSpaceManager*

@@ -793,6 +793,13 @@ public class GeckoAppShell
         systemExit();
     }
 
+    static void gracefulExit() {
+        Log.d(LOGTAG, "Initiating graceful exit...");
+        sendEventToGeckoSync(GeckoEvent.createBroadcastEvent("Browser:Quit", ""));
+        GeckoThread.setLaunchState(GeckoThread.LaunchState.GeckoExited);
+        System.exit(0);
+    }
+
     static void systemExit() {
         Log.d(LOGTAG, "Killing via System.exit()");
         GeckoThread.setLaunchState(GeckoThread.LaunchState.GeckoExited);
@@ -1416,10 +1423,19 @@ public class GeckoAppShell
         return (Vibrator) layerView.getContext().getSystemService(Context.VIBRATOR_SERVICE);
     }
 
+    // Helper method to convert integer array to long array.
+    private static long[] convertIntToLongArray(int[] input) {
+        long[] output = new long[input.length];
+        for (int i = 0; i < input.length; i++) {
+            output[i] = input[i];
+        }
+        return output;
+    }
+
     // Vibrate only if haptic feedback is enabled.
-    public static void vibrateOnHapticFeedbackEnabled(long milliseconds) {
+    public static void vibrateOnHapticFeedbackEnabled(int[] milliseconds) {
         if (Settings.System.getInt(getContext().getContentResolver(), Settings.System.HAPTIC_FEEDBACK_ENABLED, 0) > 0) {
-            vibrate(milliseconds);
+            vibrate(convertIntToLongArray(milliseconds), -1);
         }
     }
 

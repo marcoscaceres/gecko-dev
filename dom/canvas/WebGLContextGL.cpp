@@ -1105,13 +1105,11 @@ WebGLContext::GetBufferParameter(GLenum target, GLenum pname)
     if (IsContextLost())
         return JS::NullValue();
 
-
-    WebGLRefPtr<WebGLBuffer>* slot = GetBufferSlotByTarget(target,
-                                                           "getBufferParameter");
-    if (!slot)
+    if (!ValidateBufferTarget(target, "getBufferParameter"))
         return JS::NullValue();
 
-    if (!*slot) {
+    WebGLRefPtr<WebGLBuffer>& slot = GetBufferSlotByTarget(target);
+    if (!slot) {
         ErrorInvalidOperation("No buffer bound to `target` (0x%4x).", target);
         return JS::NullValue();
     }
@@ -1579,6 +1577,35 @@ void WebGLContext::TexParameter_base(GLenum rawTarget, GLenum pname,
             else
                 tex->SetMaxMipmapLevel(intParam);
             break;
+
+        case LOCAL_GL_TEXTURE_COMPARE_MODE:
+            if (!IsWebGL2())
+                return ErrorInvalidEnumInfo("texParameter: pname", pname);
+
+            paramValueInvalid = (intParam != LOCAL_GL_NONE &&
+                                 intParam != LOCAL_GL_COMPARE_REF_TO_TEXTURE);
+            break;
+
+        case LOCAL_GL_TEXTURE_COMPARE_FUNC:
+            if (!IsWebGL2())
+                return ErrorInvalidEnumInfo("texParameter: pname", pname);
+
+            switch (intParam) {
+            case LOCAL_GL_LEQUAL:
+            case LOCAL_GL_GEQUAL:
+            case LOCAL_GL_LESS:
+            case LOCAL_GL_GREATER:
+            case LOCAL_GL_EQUAL:
+            case LOCAL_GL_NOTEQUAL:
+            case LOCAL_GL_ALWAYS:
+            case LOCAL_GL_NEVER:
+                paramValueInvalid = false;
+
+            default:
+                paramValueInvalid = true;
+            }
+            break;
+
         case LOCAL_GL_TEXTURE_MIN_FILTER:
             switch (intParam) {
                 case LOCAL_GL_NEAREST:
@@ -3296,7 +3323,8 @@ WebGLContext::CompileShader(WebGLShader* shader)
     int compileOptions = SH_VARIABLES |
                          SH_ENFORCE_PACKING_RESTRICTIONS |
                          SH_INIT_VARYINGS_WITHOUT_STATIC_USE |
-                         SH_OBJECT_CODE;
+                         SH_OBJECT_CODE |
+                         SH_LIMIT_CALL_STACK_DEPTH;
 
     if (resources.MaxExpressionComplexity > 0) {
         compileOptions |= SH_LIMIT_EXPRESSION_COMPLEXITY;
@@ -3974,7 +4002,7 @@ WebGLContext::TexImage2D(GLenum rawTarget, GLint level,
     if (pixels.IsNull()) {
         data = nullptr;
         length = 0;
-        jsArrayType = js::Scalar::TypeMax;
+        jsArrayType = js::Scalar::MaxTypedArrayViewType;
     } else {
         const ArrayBufferView& view = pixels.Value();
         view.ComputeLengthAndData();
@@ -4018,7 +4046,7 @@ WebGLContext::TexImage2D(GLenum rawTarget, GLint level,
 
     return TexImage2D_base(rawTarget, level, internalformat, pixels->Width(),
                            pixels->Height(), 4*pixels->Width(), 0,
-                           format, type, pixelData, pixelDataLength, js::Scalar::TypeMax,
+                           format, type, pixelData, pixelDataLength, js::Scalar::MaxTypedArrayViewType,
                            WebGLTexelFormat::RGBA8, false);
 }
 
@@ -4201,7 +4229,7 @@ WebGLContext::TexSubImage2D(GLenum target, GLint level,
                               pixels->Width(), pixels->Height(),
                               4*pixels->Width(), format, type,
                               arr.Data(), arr.Length(),
-                              js::Scalar::TypeMax,
+                              js::Scalar::MaxTypedArrayViewType,
                               WebGLTexelFormat::RGBA8, false);
 }
 

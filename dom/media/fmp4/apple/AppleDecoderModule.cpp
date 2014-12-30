@@ -13,6 +13,17 @@
 #include "AppleVTLinker.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/DebugOnly.h"
+#include "prlog.h"
+
+#ifdef PR_LOGGING
+PRLogModuleInfo* GetAppleMediaLog() {
+  static PRLogModuleInfo* log = nullptr;
+  if (!log) {
+    log = PR_NewLogModule("AppleMedia");
+  }
+  return log;
+}
+#endif
 
 namespace mozilla {
 
@@ -185,6 +196,12 @@ bool
 AppleDecoderModule::SupportsAudioMimeType(const char* aMimeType)
 {
   return !strcmp(aMimeType, "audio/mp4a-latm") || !strcmp(aMimeType, "audio/mpeg");
+}
+
+bool
+AppleDecoderModule::DecoderNeedsAVCC(const mp4_demuxer::VideoDecoderConfig& aConfig)
+{
+  return true;
 }
 
 } // namespace mozilla

@@ -20,6 +20,7 @@
 #include "nsFrameManager.h"
 #include "nsRefreshDriver.h"
 #include "mozilla/dom/Touch.h"
+#include "mozilla/PendingPlayerTracker.h"
 #include "nsIObjectLoadingContent.h"
 #include "nsFrame.h"
 #include "mozilla/layers/ShadowLayers.h"
@@ -375,7 +376,7 @@ nsDOMWindowUtils::SetDisplayPortForElement(float aXPx, float aYPx,
                        new DisplayPortPropertyData(displayport, aPriority),
                        nsINode::DeleteProperty<DisplayPortPropertyData>);
 
-  if (nsLayoutUtils::UsesAsyncScrolling()) {
+  if (nsLayoutUtils::UsesAsyncScrolling() && gfxPrefs::LayoutUseContainersForRootFrames()) {
     nsIFrame* rootScrollFrame = presShell->GetRootScrollFrame();
     if (rootScrollFrame && content == rootScrollFrame->GetContent()) {
       // We are setting a root displayport for a document.
@@ -2654,6 +2655,23 @@ nsDOMWindowUtils::AdvanceTimeAndRefresh(int64_t aMilliseconds)
   MOZ_RELEASE_ASSERT(nsContentUtils::IsCallerChrome());
 
   nsRefreshDriver* driver = GetPresContext()->RefreshDriver();
+
+  // Before we advance the time, we should trigger any animations that are
+  // waiting to start. This is because there are many tests that call this
+  // which expect animations to start immediately. Ideally, we should make
+  // all these tests do an asynchronous wait on the corresponding animation
+  // player's 'ready' promise before continuing. Then we could remove the
+  // special handling here and the code path followed when testing would
+  // more closely match the code path during regular operation. Filed as
+  // bug 1112957.
+  nsCOMPtr<nsIDocument> doc = GetDocument();
+  if (doc) {
+    PendingPlayerTracker* tracker = doc->GetPendingPlayerTracker();
+    if (tracker) {
+      tracker->StartPendingPlayers(driver->MostRecentRefresh());
+    }
+  }
+
   driver->AdvanceTimeAndRefresh(aMilliseconds);
 
   RefPtr<LayerTransactionChild> transaction = GetLayerTransaction();
@@ -3119,6 +3137,12 @@ nsDOMWindowUtils::GetFileReferences(const nsAString& aDatabaseName, int64_t aId,
   nsCOMPtr<nsPIDOMWindow> window = do_QueryReferent(mWindow);
   NS_ENSURE_TRUE(window, NS_ERROR_FAILURE);
 
+  nsCString origin;
+  nsresult rv =
+    quota::QuotaManager::GetInfoFromWindow(window, nullptr, &origin, nullptr,
+                                           nullptr);
+  NS_ENSURE_SUCCESS(rv, rv);
+
   IDBOpenDBOptions options;
   JS::Rooted<JS::Value> optionsVal(aCx, aOptions);
   if (!options.Init(aCx, optionsVal)) {
@@ -3127,12 +3151,6 @@ nsDOMWindowUtils::GetFileReferences(const nsAString& aDatabaseName, int64_t aId,
 
   quota::PersistenceType persistenceType =
     quota::PersistenceTypeFromStorage(options.mStorage);
-
-  nsCString origin;
-  nsresult rv =
-    quota::QuotaManager::GetInfoFromWindow(window, persistenceType, nullptr,
-                                           &origin, nullptr, nullptr);
-  NS_ENSURE_SUCCESS(rv, rv);
 
   nsRefPtr<indexedDB::IndexedDatabaseManager> mgr =
     indexedDB::IndexedDatabaseManager::Get();

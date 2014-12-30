@@ -193,6 +193,7 @@ body {
 
 .room-list {
   max-height: 335px; /* XXX better computation needed */
+  min-height: 7px;
   overflow: auto;
   border-top: 1px solid #ccc;
   border-bottom: 1px solid #ccc;
@@ -204,9 +205,11 @@ body {
 
 .room-list > .room-entry {
   padding: .5rem 1rem;
+  cursor: pointer;
 }
 
 .room-list > .room-entry > h2 {
+  display: inline-block;
   font-size: .85rem;
   color: #777;
 }
@@ -298,14 +301,31 @@ body {
   top: 0px;
 }
 
-.room-list > .room-entry > h2 {
-  display: inline-block;
-}
-
 /* keep the various room-entry row pieces aligned with each other */
 .room-list > .room-entry > h2 > button,
 .room-list > .room-entry > h2 > span {
   vertical-align: middle;
+}
+
+/* Edit in place */
+
+.room-list > .room-entry > h2 > .edit-in-place {
+  cursor: text;
+}
+
+.room-list > .room-entry > h2 > .edit-in-place:hover {
+  background: #fefbc4;
+}
+
+.room-list > .room-entry > h2 > form {
+  display: inline-block;
+}
+
+.room-list > .room-entry > h2 > form > input {
+  border: none;
+  background: #fefbc4;
+  font-size: 13.6px;
+  padding: 0;
 }
 
 /* Buttons */
@@ -658,6 +678,10 @@ body[dir=rtl] .generate-url-spinner {
 
 .settings-menu .icon-settings {
   background: transparent url(../img/svg/glyph-settings-16x16.svg) no-repeat center center;
+}
+
+.settings-menu .icon-tour {
+  background: transparent url("../img/icons-16x16.svg#tour") no-repeat center center;
 }
 
 .settings-menu .icon-account {

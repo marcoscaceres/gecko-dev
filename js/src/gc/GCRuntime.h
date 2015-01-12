@@ -301,27 +301,25 @@ class GCRuntime
     bool isHeapCompacting() { return false; }
 #endif
 
-    // Performance note: if isFJMinorCollecting turns out to be slow because
-    // reading the counter is slow then we may be able to augment the counter
-    // with a volatile flag that is set iff the counter is greater than
-    // zero. (It will require some care to make sure the two variables stay in
-    // sync.)
-    bool isFJMinorCollecting() { return fjCollectionCounter > 0; }
-    void incFJMinorCollecting() { fjCollectionCounter++; }
-    void decFJMinorCollecting() { fjCollectionCounter--; }
-
     bool triggerGC(JS::gcreason::Reason reason);
     void maybeAllocTriggerZoneGC(Zone *zone, const AutoLockGC &lock);
     bool triggerZoneGC(Zone *zone, JS::gcreason::Reason reason);
     bool maybeGC(Zone *zone);
     void maybePeriodicFullGC();
-    void minorGC(JS::gcreason::Reason reason);
+    void minorGC(JS::gcreason::Reason reason) {
+        gcstats::AutoPhase ap(stats, gcstats::PHASE_MINOR_GC);
+        minorGCImpl(reason, nullptr);
+    }
     void minorGC(JSContext *cx, JS::gcreason::Reason reason);
-    void evictNursery(JS::gcreason::Reason reason = JS::gcreason::EVICT_NURSERY) { minorGC(reason); }
+    void evictNursery(JS::gcreason::Reason reason = JS::gcreason::EVICT_NURSERY) {
+        gcstats::AutoPhase ap(stats, gcstats::PHASE_EVICT_NURSERY);
+        minorGCImpl(reason, nullptr);
+    }
     bool gcIfNeeded(JSContext *cx = nullptr);
     void gc(JSGCInvocationKind gckind, JS::gcreason::Reason reason);
-    void gcSlice(JSGCInvocationKind gckind, JS::gcreason::Reason reason, int64_t millis = 0);
-    void gcFinalSlice(JSGCInvocationKind gckind, JS::gcreason::Reason reason);
+    void startGC(JSGCInvocationKind gckind, JS::gcreason::Reason reason, int64_t millis = 0);
+    void gcSlice(JS::gcreason::Reason reason, int64_t millis = 0);
+    void finishGC(JS::gcreason::Reason reason);
     void gcDebugSlice(SliceBudget &budget);
 
     void runDebugGC();
@@ -346,6 +344,7 @@ class GCRuntime
 
 #ifdef JS_GC_ZEAL
     const void *addressOfZealMode() { return &zealMode; }
+    void getZeal(uint8_t *zeal, uint32_t *frequency, uint32_t *nextScheduled);
     void setZeal(uint8_t zeal, uint32_t frequency);
     bool parseAndSetZeal(const char *str);
     void setNextScheduled(uint32_t count);
@@ -429,7 +428,7 @@ class GCRuntime
     void disallowIncrementalGC() { incrementalAllowed = false; }
 
     bool isIncrementalGCEnabled() { return mode == JSGC_MODE_INCREMENTAL && incrementalAllowed; }
-    bool isIncrementalGCInProgress() { return state() != gc::NO_INCREMENTAL && !verifyPreData; }
+    bool isIncrementalGCInProgress() { return state() != gc::NO_INCREMENTAL; }
 
     bool isGenerationalGCEnabled() { return generationalDisabled == 0; }
     void disableGenerationalGC();
@@ -531,6 +530,8 @@ class GCRuntime
     void releaseArena(ArenaHeader *aheader, const AutoLockGC &lock);
 
   private:
+    void minorGCImpl(JS::gcreason::Reason reason, Nursery::TypeObjectList *pretenureTypes);
+
     // For ArenaLists::allocateFromArena()
     friend class ArenaLists;
     Chunk *pickChunk(const AutoLockGC &lock,
@@ -550,7 +551,6 @@ class GCRuntime
     ChunkPool expireEmptyChunkPool(bool shrinkBuffers, const AutoLockGC &lock);
     void freeEmptyChunks(JSRuntime *rt, const AutoLockGC &lock);
     void prepareToFreeChunk(ChunkInfo &info);
-    void releaseChunk(Chunk *chunk);
 
     friend class BackgroundAllocTask;
     friend class AutoMaybeStartBackgroundAllocation;
@@ -558,10 +558,9 @@ class GCRuntime
     void startBackgroundAllocTaskIfIdle();
 
     void requestMajorGC(JS::gcreason::Reason reason);
-    void collect(bool incremental, SliceBudget &budget, JSGCInvocationKind gckind,
-                 JS::gcreason::Reason reason);
-    bool gcCycle(bool incremental, SliceBudget &budget, JSGCInvocationKind gckind,
-                 JS::gcreason::Reason reason);
+    SliceBudget defaultBudget(JS::gcreason::Reason reason, int64_t millis);
+    void collect(bool incremental, SliceBudget budget, JS::gcreason::Reason reason);
+    bool gcCycle(bool incremental, SliceBudget &budget, JS::gcreason::Reason reason);
     gcstats::ZoneGCStats scanZonesBeforeGC();
     void budgetIncrementalGC(SliceBudget &budget);
     void resetIncrementalGC(const char *reason);
@@ -839,16 +838,6 @@ class GCRuntime
     volatile js::HeapState heapState;
 
     /*
-     * ForkJoin workers enter and leave GC independently; this counter
-     * tracks the number that are currently in GC.
-     *
-     * Technically this should be #ifdef JSGC_FJGENERATIONAL but that
-     * affects the observed size of JSRuntime in problematic ways, see
-     * note in vm/ThreadPool.h.
-     */
-    mozilla::Atomic<uint32_t, mozilla::ReleaseAcquire> fjCollectionCounter;
-
-    /*
      * These options control the zealousness of the GC. The fundamental values
      * are nextScheduled and gcDebugCompartmentGC. At every allocation,
      * nextScheduled is decremented. When it reaches zero, we do either a full
@@ -860,10 +849,10 @@ class GCRuntime
      *
      * You can control these values in several ways:
      *   - Set the JS_GC_ZEAL environment variable
-     *   - Call zeal() or schedulegc() from inside shell-executed JS code
+     *   - Call gczeal() or schedulegc() from inside shell-executed JS code
      *     (see the help for details)
      *
-     * If gzZeal_ == 1 then we perform GCs in select places (during MaybeGC and
+     * If gcZeal_ == 1 then we perform GCs in select places (during MaybeGC and
      * whenever a GC poke happens). This option is mainly useful to embedders.
      *
      * We use zeal_ == 4 to enable write barrier verification. See the comment

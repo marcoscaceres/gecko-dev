@@ -19,6 +19,7 @@
 #include "jit/JitSpewer.h"
 #include "jit/MIRGraph.h"
 #include "jit/RangeAnalysis.h"
+#include "js/Conversions.h"
 
 #include "jsatominlines.h"
 #include "jsinferinlines.h"
@@ -26,6 +27,8 @@
 
 using namespace js;
 using namespace js::jit;
+
+using JS::ToInt32;
 
 using mozilla::NumbersAreIdentical;
 using mozilla::IsFloat32Representable;
@@ -1013,11 +1016,10 @@ MCallDOMNative::getAliasSet() const
 {
     const JSJitInfo *jitInfo = getJitInfo();
 
-    MOZ_ASSERT(jitInfo->aliasSet() != JSJitInfo::AliasNone);
     // If we don't know anything about the types of our arguments, we have to
     // assume that type-coercions can have side-effects, so we need to alias
     // everything.
-    if (jitInfo->aliasSet() != JSJitInfo::AliasDOMSets || !jitInfo->isTypedMethodJitInfo())
+    if (jitInfo->aliasSet() == JSJitInfo::AliasEverything || !jitInfo->isTypedMethodJitInfo())
         return AliasSet::Store(AliasSet::Any);
 
     uint32_t argIndex = 0;
@@ -1048,8 +1050,12 @@ MCallDOMNative::getAliasSet() const
          }
     }
 
-    // We checked all the args, and they check out.  So we only
-    // alias DOM mutations.
+    // We checked all the args, and they check out.  So we only alias DOM
+    // mutations or alias nothing, depending on the alias set in the jitinfo.
+    if (jitInfo->aliasSet() == JSJitInfo::AliasNone)
+        return AliasSet::None();
+
+    MOZ_ASSERT(jitInfo->aliasSet() == JSJitInfo::AliasDOMSets);
     return AliasSet::Load(AliasSet::DOMProperty);
 }
 
@@ -2265,17 +2271,6 @@ MBinaryArithInstruction::inferFallback(BaselineInspector *inspector,
         return;
     }
 
-    // In parallel execution, for now anyhow, we *only* support adding
-    // and manipulating numbers (not strings or objects).  So no
-    // matter what we can specialize to double...if the result ought
-    // to have been something else, we'll fail in the various type
-    // guards that get inserted later.
-    if (block()->info().executionMode() == ParallelExecution) {
-        specialization_ = MIRType_Double;
-        setResultType(MIRType_Double);
-        return;
-    }
-
     // If we can't specialize because we have no type information at all for
     // the lhs or rhs, mark the binary instruction as having no possible types
     // either to avoid degrading subsequent analysis.
@@ -3058,7 +3053,7 @@ MCompare::tryFold(bool *result)
             }
             if (!lhs()->mightBeType(MIRType_Null) &&
                 !lhs()->mightBeType(MIRType_Undefined) &&
-                !operandMightEmulateUndefined())
+                !(lhs()->mightBeType(MIRType_Object) && operandMightEmulateUndefined()))
             {
                 *result = (op == JSOP_NE);
                 return true;

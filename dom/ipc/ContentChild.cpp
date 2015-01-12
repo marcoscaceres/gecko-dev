@@ -216,7 +216,7 @@ public:
 
     MemoryReportRequestChild(uint32_t aGeneration, bool aAnonymize,
                              const MaybeFileDesc& aDMDFile);
-    NS_IMETHOD Run();
+    NS_IMETHOD Run() MOZ_OVERRIDE;
 private:
     virtual ~MemoryReportRequestChild();
 
@@ -806,10 +806,10 @@ public:
     {
     }
 
-    NS_IMETHOD Callback(const nsACString &aProcess, const nsACString &aPath,
+    NS_IMETHOD Callback(const nsACString& aProcess, const nsACString &aPath,
                         int32_t aKind, int32_t aUnits, int64_t aAmount,
-                        const nsACString &aDescription,
-                        nsISupports *aiWrappedReports)
+                        const nsACString& aDescription,
+                        nsISupports* aiWrappedReports) MOZ_OVERRIDE
     {
         MemoryReportsWrapper *wrappedReports =
             static_cast<MemoryReportsWrapper *>(aiWrappedReports);
@@ -951,7 +951,7 @@ mozilla::plugins::PPluginModuleParent*
 ContentChild::AllocPPluginModuleParent(mozilla::ipc::Transport* aTransport,
                                        base::ProcessId aOtherProcess)
 {
-    return plugins::PluginModuleContentParent::Create(aTransport, aOtherProcess);
+    return plugins::PluginModuleContentParent::Initialize(aTransport, aOtherProcess);
 }
 
 PContentBridgeChild*
@@ -2471,6 +2471,21 @@ ContentChild::RecvGetProfile(nsCString* aProfile)
     } else {
         *aProfile = EmptyCString();
     }
+    return true;
+}
+
+bool
+ContentChild::RecvLoadPluginResult(const uint32_t& aPluginId, const bool& aResult)
+{
+    plugins::PluginModuleContentParent::OnLoadPluginResult(aPluginId, aResult);
+    return true;
+}
+
+bool
+ContentChild::RecvAssociatePluginId(const uint32_t& aPluginId,
+                                    const base::ProcessId& aProcessId)
+{
+    plugins::PluginModuleContentParent::AssociatePluginId(aPluginId, aProcessId);
     return true;
 }
 

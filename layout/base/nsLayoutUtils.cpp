@@ -3103,14 +3103,17 @@ nsLayoutUtils::PaintFrame(nsRenderingContext* aRenderingContext, nsIFrame* aFram
     willFlushRetainedLayers = true;
   }
 
-#ifdef MOZ_DUMP_PAINTING
-  FILE* savedDumpFile = gfxUtils::sDumpPaintFile;
 
   bool profilerNeedsDisplayList = profiler_feature_active("displaylistdump");
-  bool consoleNeedsDisplayList = gfxUtils::DumpPaintList() || gfxUtils::sDumpPainting;
+  bool consoleNeedsDisplayList = gfxUtils::DumpDisplayList() || gfxUtils::sDumpPainting;
+#ifdef MOZ_DUMP_PAINTING
+  FILE* savedDumpFile = gfxUtils::sDumpPaintFile;
+#endif
 
-  UniquePtr<std::stringstream> ss = MakeUnique<std::stringstream>();
+  UniquePtr<std::stringstream> ss;
   if (consoleNeedsDisplayList || profilerNeedsDisplayList) {
+    ss = MakeUnique<std::stringstream>();
+#ifdef MOZ_DUMP_PAINTING
     if (gfxUtils::sDumpPaintingToFile) {
       nsCString string("dump-");
       string.AppendInt(gPaintCount);
@@ -3122,6 +3125,7 @@ nsLayoutUtils::PaintFrame(nsRenderingContext* aRenderingContext, nsIFrame* aFram
     if (gfxUtils::sDumpPaintingToFile) {
       *ss << "<html><head><script>var array = {}; function ViewImage(index) { window.location = array[index]; }</script></head><body>";
     }
+#endif
     *ss << nsPrintfCString("Painting --- before optimization (dirty %d,%d,%d,%d):\n",
             dirtyRect.x, dirtyRect.y, dirtyRect.width, dirtyRect.height).get();
     nsFrame::PrintDisplayList(&builder, list, *ss, gfxUtils::sDumpPaintingToFile);
@@ -3139,7 +3143,6 @@ nsLayoutUtils::PaintFrame(nsRenderingContext* aRenderingContext, nsIFrame* aFram
       ss = MakeUnique<std::stringstream>();
     }
   }
-#endif
 
   uint32_t flags = nsDisplayList::PAINT_DEFAULT;
   if (aFlags & PAINT_WIDGET_LAYERS) {
@@ -3178,11 +3181,12 @@ nsLayoutUtils::PaintFrame(nsRenderingContext* aRenderingContext, nsIFrame* aFram
   Telemetry::AccumulateTimeDelta(Telemetry::PAINT_RASTERIZE_TIME,
                                  paintStart);
 
-#ifdef MOZ_DUMP_PAINTING
   if (consoleNeedsDisplayList || profilerNeedsDisplayList) {
+#ifdef MOZ_DUMP_PAINTING
     if (gfxUtils::sDumpPaintingToFile) {
       *ss << "</script>";
     }
+#endif
     *ss << "Painting --- after optimization:\n";
     nsFrame::PrintDisplayList(&builder, list, *ss, gfxUtils::sDumpPaintingToFile);
 
@@ -3190,9 +3194,6 @@ nsLayoutUtils::PaintFrame(nsRenderingContext* aRenderingContext, nsIFrame* aFram
     if (layerManager) {
       FrameLayerBuilder::DumpRetainedLayerTree(layerManager, *ss,
                                                gfxUtils::sDumpPaintingToFile);
-    }
-    if (gfxUtils::sDumpPaintingToFile) {
-      *ss << "</body></html>";
     }
 
     if (profilerNeedsDisplayList && !consoleNeedsDisplayList) {
@@ -3202,13 +3203,17 @@ nsLayoutUtils::PaintFrame(nsRenderingContext* aRenderingContext, nsIFrame* aFram
       fprint_stderr(gfxUtils::sDumpPaintFile, *ss);
     }
 
+#ifdef MOZ_DUMP_PAINTING
+    if (gfxUtils::sDumpPaintingToFile) {
+      *ss << "</body></html>";
+    }
     if (gfxUtils::sDumpPaintingToFile) {
       fclose(gfxUtils::sDumpPaintFile);
     }
     gfxUtils::sDumpPaintFile = savedDumpFile;
     gPaintCount++;
-  }
 #endif
+  }
 
   // Update the widget's opaque region information. This sets
   // glass boundaries on Windows. Also set up the window dragging region
@@ -5110,6 +5115,8 @@ nsLayoutUtils::AppUnitWidthOfStringBidi(const char16_t* aString,
                                              aFontMetrics);
   }
   aFontMetrics.SetTextRunRTL(false);
+  aFontMetrics.SetVertical(aFrame->GetWritingMode().IsVertical());
+  aFontMetrics.SetTextOrientation(aFrame->StyleVisibility()->mTextOrientation);
   return nsLayoutUtils::AppUnitWidthOfString(aString, aLength, aFontMetrics,
                                              aContext);
 }
@@ -5151,11 +5158,19 @@ nsLayoutUtils::DrawString(const nsIFrame*       aFrame,
                           nsStyleContext*       aStyleContext)
 {
   nsresult rv = NS_ERROR_FAILURE;
+
+  // If caller didn't pass a style context, use the frame's.
+  if (!aStyleContext) {
+    aStyleContext = aFrame->StyleContext();
+  }
+  aFontMetrics.SetVertical(WritingMode(aStyleContext).IsVertical());
+  aFontMetrics.SetTextOrientation(
+    aStyleContext->StyleVisibility()->mTextOrientation);
+
   nsPresContext* presContext = aFrame->PresContext();
   if (presContext->BidiEnabled()) {
     nsBidiLevel level =
-      nsBidiPresUtils::BidiLevelFromStyle(aStyleContext ?
-                                          aStyleContext : aFrame->StyleContext());
+      nsBidiPresUtils::BidiLevelFromStyle(aStyleContext);
     rv = nsBidiPresUtils::RenderText(aString, aLength, level,
                                      presContext, *aContext, *aContext,
                                      aFontMetrics,

@@ -166,21 +166,20 @@ IonBuilder::inlineNativeCall(CallInfo &callInfo, JSFunction *target)
     // Array intrinsics.
     if (native == intrinsic_UnsafePutElements)
         return inlineUnsafePutElements(callInfo);
-    if (native == intrinsic_NewDenseArray)
-        return inlineNewDenseArray(callInfo);
 
     // Slot intrinsics.
     if (native == intrinsic_UnsafeSetReservedSlot)
         return inlineUnsafeSetReservedSlot(callInfo);
     if (native == intrinsic_UnsafeGetReservedSlot)
-        return inlineUnsafeGetReservedSlot(callInfo);
-
-    // Parallel intrinsics.
-    if (native == intrinsic_ShouldForceSequential ||
-        native == intrinsic_InParallelSection)
-        return inlineForceSequentialOrInParallelSection(callInfo);
-    if (native == intrinsic_ForkJoinGetSlice)
-        return inlineForkJoinGetSlice(callInfo);
+        return inlineUnsafeGetReservedSlot(callInfo, MIRType_Value);
+    if (native == intrinsic_UnsafeGetObjectFromReservedSlot)
+        return inlineUnsafeGetReservedSlot(callInfo, MIRType_Object);
+    if (native == intrinsic_UnsafeGetInt32FromReservedSlot)
+        return inlineUnsafeGetReservedSlot(callInfo, MIRType_Int32);
+    if (native == intrinsic_UnsafeGetStringFromReservedSlot)
+        return inlineUnsafeGetReservedSlot(callInfo, MIRType_String);
+    if (native == intrinsic_UnsafeGetBooleanFromReservedSlot)
+        return inlineUnsafeGetReservedSlot(callInfo, MIRType_Boolean);
 
     // Utility intrinsics.
     if (native == intrinsic_IsCallable)
@@ -209,33 +208,31 @@ IonBuilder::inlineNativeCall(CallInfo &callInfo, JSFunction *target)
         return inlineTypedArrayLength(callInfo);
 
     // TypedObject intrinsics.
-    if (native == intrinsic_ObjectIsTypedObject)
+    if (native == js::ObjectIsTypedObject)
         return inlineHasClass(callInfo,
                               &OutlineTransparentTypedObject::class_,
                               &OutlineOpaqueTypedObject::class_,
                               &InlineTransparentTypedObject::class_,
                               &InlineOpaqueTypedObject::class_);
-    if (native == intrinsic_ObjectIsTransparentTypedObject)
+    if (native == js::ObjectIsTransparentTypedObject)
         return inlineHasClass(callInfo,
                               &OutlineTransparentTypedObject::class_,
                               &InlineTransparentTypedObject::class_);
-    if (native == intrinsic_ObjectIsOpaqueTypedObject)
+    if (native == js::ObjectIsOpaqueTypedObject)
         return inlineHasClass(callInfo,
                               &OutlineOpaqueTypedObject::class_,
                               &InlineOpaqueTypedObject::class_);
-    if (native == intrinsic_ObjectIsTypeDescr)
+    if (native == js::ObjectIsTypeDescr)
         return inlineObjectIsTypeDescr(callInfo);
-    if (native == intrinsic_TypeDescrIsSimpleType)
+    if (native == js::TypeDescrIsSimpleType)
         return inlineHasClass(callInfo,
                               &ScalarTypeDescr::class_, &ReferenceTypeDescr::class_);
-    if (native == intrinsic_TypeDescrIsArrayType)
+    if (native == js::TypeDescrIsArrayType)
         return inlineHasClass(callInfo, &ArrayTypeDescr::class_);
-    if (native == intrinsic_SetTypedObjectOffset)
+    if (native == js::SetTypedObjectOffset)
         return inlineSetTypedObjectOffset(callInfo);
 
     // Testing Functions
-    if (native == testingFunc_inParallelSection)
-        return inlineForceSequentialOrInParallelSection(callInfo);
     if (native == testingFunc_bailout)
         return inlineBailout(callInfo);
     if (native == testingFunc_assertFloat32)
@@ -1769,129 +1766,6 @@ IonBuilder::inlineUnsafeSetTypedObjectArrayElement(CallInfo &callInfo,
 }
 
 IonBuilder::InliningStatus
-IonBuilder::inlineForceSequentialOrInParallelSection(CallInfo &callInfo)
-{
-    if (callInfo.constructing())
-        return InliningStatus_NotInlined;
-
-    ExecutionMode executionMode = info().executionMode();
-    switch (executionMode) {
-      case ParallelExecution: {
-        // During Parallel Exec, we always force sequential, so
-        // replace with true.  This permits UCE to eliminate the
-        // entire path as dead, which is important.
-        callInfo.setImplicitlyUsedUnchecked();
-        MConstant *ins = MConstant::New(alloc(), BooleanValue(true));
-        current->add(ins);
-        current->push(ins);
-        return InliningStatus_Inlined;
-      }
-
-      default:
-        // In sequential mode, leave as is, because we'd have to
-        // access the "in warmup" flag of the runtime.
-        return InliningStatus_NotInlined;
-    }
-
-    MOZ_CRASH("Invalid execution mode");
-}
-
-IonBuilder::InliningStatus
-IonBuilder::inlineForkJoinGetSlice(CallInfo &callInfo)
-{
-    if (info().executionMode() != ParallelExecution)
-        return InliningStatus_NotInlined;
-
-    // Assert the way the function is used instead of testing, as it is a
-    // self-hosted function which must be used in a particular fashion.
-    MOZ_ASSERT(callInfo.argc() == 1 && !callInfo.constructing());
-    MOZ_ASSERT(callInfo.getArg(0)->type() == MIRType_Int32);
-
-    // Test this, as we might have not executed the native despite knowing the
-    // target here.
-    if (getInlineReturnType() != MIRType_Int32)
-        return InliningStatus_NotInlined;
-
-    callInfo.setImplicitlyUsedUnchecked();
-
-    switch (info().executionMode()) {
-      case ParallelExecution:
-        if (LIRGenerator::allowInlineForkJoinGetSlice()) {
-            MForkJoinGetSlice *getSlice = MForkJoinGetSlice::New(alloc(),
-                                                                 graph().forkJoinContext());
-            current->add(getSlice);
-            current->push(getSlice);
-            return InliningStatus_Inlined;
-        }
-        return InliningStatus_NotInlined;
-
-      default:
-        // ForkJoinGetSlice acts as identity for sequential execution.
-        current->push(callInfo.getArg(0));
-        return InliningStatus_Inlined;
-    }
-
-    MOZ_CRASH("Invalid execution mode");
-}
-
-IonBuilder::InliningStatus
-IonBuilder::inlineNewDenseArray(CallInfo &callInfo)
-{
-    if (callInfo.constructing() || callInfo.argc() != 1)
-        return InliningStatus_NotInlined;
-
-    // For now, in seq. mode we just call the C function.  In
-    // par. mode we use inlined MIR.
-    ExecutionMode executionMode = info().executionMode();
-    switch (executionMode) {
-      case ParallelExecution:
-        return inlineNewDenseArrayForParallelExecution(callInfo);
-      default:
-        return inlineNewDenseArrayForSequentialExecution(callInfo);
-    }
-
-    MOZ_CRASH("unknown ExecutionMode");
-}
-
-IonBuilder::InliningStatus
-IonBuilder::inlineNewDenseArrayForSequentialExecution(CallInfo &callInfo)
-{
-    // not yet implemented; in seq. mode the C function is not so bad
-    return InliningStatus_NotInlined;
-}
-
-IonBuilder::InliningStatus
-IonBuilder::inlineNewDenseArrayForParallelExecution(CallInfo &callInfo)
-{
-    // Create the new parallel array object.  Parallel arrays have specially
-    // constructed type objects, so we can only perform the inlining if we
-    // already have one of these type objects.
-    types::TemporaryTypeSet *returnTypes = getInlineReturnTypeSet();
-    if (returnTypes->getKnownMIRType() != MIRType_Object)
-        return InliningStatus_NotInlined;
-    if (returnTypes->unknownObject() || returnTypes->getObjectCount() != 1)
-        return InliningStatus_NotInlined;
-    if (callInfo.getArg(0)->type() != MIRType_Int32)
-        return InliningStatus_NotInlined;
-    types::TypeObject *typeObject = returnTypes->getTypeObject(0);
-
-    NativeObject *templateObject = inspector->getTemplateObjectForNative(pc, intrinsic_NewDenseArray);
-    if (!templateObject || templateObject->type() != typeObject)
-        return InliningStatus_NotInlined;
-
-    callInfo.setImplicitlyUsedUnchecked();
-
-    MNewDenseArrayPar *newObject = MNewDenseArrayPar::New(alloc(),
-                                                          graph().forkJoinContext(),
-                                                          callInfo.getArg(0),
-                                                          &templateObject->as<ArrayObject>());
-    current->add(newObject);
-    current->push(newObject);
-
-    return InliningStatus_Inlined;
-}
-
-IonBuilder::InliningStatus
 IonBuilder::inlineHasClass(CallInfo &callInfo,
                            const Class *clasp1, const Class *clasp2,
                            const Class *clasp3, const Class *clasp4)
@@ -2111,7 +1985,7 @@ IonBuilder::inlineUnsafeSetReservedSlot(CallInfo &callInfo)
 }
 
 IonBuilder::InliningStatus
-IonBuilder::inlineUnsafeGetReservedSlot(CallInfo &callInfo)
+IonBuilder::inlineUnsafeGetReservedSlot(CallInfo &callInfo, MIRType knownValueType)
 {
     if (callInfo.argc() != 2 || callInfo.constructing())
         return InliningStatus_NotInlined;
@@ -2131,6 +2005,17 @@ IonBuilder::inlineUnsafeGetReservedSlot(CallInfo &callInfo)
     MLoadFixedSlot *load = MLoadFixedSlot::New(alloc(), callInfo.getArg(0), slot);
     current->add(load);
     current->push(load);
+    if (knownValueType != MIRType_Value) {
+        // We know what type we have in this slot.  Assert that this is in fact
+        // what we've seen coming from this slot in the past, then tell the
+        // MLoadFixedSlot about its result type.  That will make us do an
+        // infallible unbox as part of the slot load and then we'll barrier on
+        // the unbox result.  That way the type barrier code won't end up doing
+        // MIRType checks and conditional unboxing.
+        MOZ_ASSERT_IF(!getInlineReturnTypeSet()->empty(),
+                      getInlineReturnType() == knownValueType);
+        load->setResultType(knownValueType);
+    }
 
     // We don't track reserved slot types, so always emit a barrier.
     if (!pushTypeBarrier(load, getInlineReturnTypeSet(), BarrierKind::TypeSet))

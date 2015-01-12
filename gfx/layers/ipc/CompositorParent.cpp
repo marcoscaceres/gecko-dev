@@ -199,6 +199,7 @@ static void SetThreadPriority()
 CompositorVsyncObserver::CompositorVsyncObserver(CompositorParent* aCompositorParent, nsIWidget* aWidget)
   : mNeedsComposite(false)
   , mIsObservingVsync(false)
+  , mVsyncNotificationsSkipped(0)
   , mCompositorParent(aCompositorParent)
   , mCurrentCompositeTaskMonitor("CurrentCompositeTaskMonitor")
   , mCurrentCompositeTask(nullptr)
@@ -285,6 +286,9 @@ CompositorVsyncObserver::Composite(TimeStamp aVsyncTimestamp)
   if (mNeedsComposite && mCompositorParent) {
     mNeedsComposite = false;
     mCompositorParent->CompositeCallback(aVsyncTimestamp);
+    mVsyncNotificationsSkipped = 0;
+  } else if (mVsyncNotificationsSkipped++ > gfxPrefs::CompositorUnobserveCount()) {
+    UnobserveVsync();
   }
 
   DispatchTouchEvents(aVsyncTimestamp);
@@ -729,7 +733,7 @@ CompositorParent::NotifyShadowTreeTransaction(uint64_t aId, bool aIsFirstPaint,
       mLayerManager &&
       mLayerManager->GetRoot()) {
     AutoResolveRefLayers resolve(mCompositionManager);
-    mApzcTreeManager->UpdatePanZoomControllerTree(this, mLayerManager->GetRoot(),
+    mApzcTreeManager->UpdateHitTestingTree(this, mLayerManager->GetRoot(),
         aIsFirstPaint, aId, aPaintSequenceNumber);
 
     mLayerManager->NotifyShadowTreeTransaction();
@@ -1002,7 +1006,7 @@ CompositorParent::ShadowLayersUpdated(LayerTransactionParent* aLayerTree,
 
   if (mApzcTreeManager && !aIsRepeatTransaction) {
     AutoResolveRefLayers resolve(mCompositionManager);
-    mApzcTreeManager->UpdatePanZoomControllerTree(this, root, aIsFirstPaint,
+    mApzcTreeManager->UpdateHitTestingTree(this, root, aIsFirstPaint,
         mRootLayerTreeID, aPaintSequenceNumber);
   }
 
@@ -1386,10 +1390,10 @@ public:
   virtual bool RecvNotifyChildCreated(const uint64_t& child) MOZ_OVERRIDE;
   virtual bool RecvAdoptChild(const uint64_t& child) MOZ_OVERRIDE { return false; }
   virtual bool RecvMakeSnapshot(const SurfaceDescriptor& aInSnapshot,
-                                const nsIntRect& aRect)
+                                const nsIntRect& aRect) MOZ_OVERRIDE
   { return true; }
   virtual bool RecvFlushRendering() MOZ_OVERRIDE { return true; }
-  virtual bool RecvNotifyRegionInvalidated(const nsIntRegion& aRegion) { return true; }
+  virtual bool RecvNotifyRegionInvalidated(const nsIntRegion& aRegion) MOZ_OVERRIDE { return true; }
   virtual bool RecvStartFrameTimeRecording(const int32_t& aBufferSize, uint32_t* aOutStartIndex) MOZ_OVERRIDE { return true; }
   virtual bool RecvStopFrameTimeRecording(const uint32_t& aStartIndex, InfallibleTArray<float>* intervals) MOZ_OVERRIDE  { return true; }
   virtual bool RecvGetTileSize(int32_t* aWidth, int32_t* aHeight) MOZ_OVERRIDE

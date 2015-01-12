@@ -107,13 +107,6 @@ Zone::onTooMuchMalloc()
     }
 }
 
-bool
-Zone::isCloseToAllocTrigger(bool highFrequencyGC) const
-{
-    double factor = highFrequencyGC ? 0.85 : 0.9;
-    return usage.gcBytes() >= factor * threshold.gcTriggerBytes();
-}
-
 void
 Zone::beginSweepTypes(FreeOp *fop, bool releaseTypes)
 {
@@ -192,8 +185,7 @@ Zone::discardJitCode(FreeOp *fop)
 
         for (ZoneCellIterUnderGC i(this, FINALIZE_SCRIPT); !i.done(); i.next()) {
             JSScript *script = i.get<JSScript>();
-            jit::FinishInvalidation<SequentialExecution>(fop, script);
-            jit::FinishInvalidation<ParallelExecution>(fop, script);
+            jit::FinishInvalidation(fop, script);
 
             /*
              * Discard baseline script if it's not marked as active. Note that

@@ -81,9 +81,10 @@ BaselineCompiler::compile()
     JitSpew(JitSpew_Codegen, "# Emitting baseline code for script %s:%d",
             script->filename(), script->lineno());
 
-    TraceLogger *logger = TraceLoggerForMainThread(cx->runtime());
-    AutoTraceLog logScript(logger, TraceLogCreateTextId(logger, script));
-    AutoTraceLog logCompile(logger, TraceLogger::BaselineCompilation);
+    TraceLoggerThread *logger = TraceLoggerForMainThread(cx->runtime());
+    TraceLoggerEvent scriptEvent(logger, TraceLogger_AnnotateScripts, script);
+    AutoTraceLog logScript(logger, scriptEvent);
+    AutoTraceLog logCompile(logger, TraceLogger_BaselineCompilation);
 
     if (!script->ensureHasTypes(cx) || !script->ensureHasAnalyzedArgsUsage(cx))
         return Method_Error;
@@ -175,6 +176,10 @@ BaselineCompiler::compile()
     prologueOffset_.fixup(&masm);
     epilogueOffset_.fixup(&masm);
     spsPushToggleOffset_.fixup(&masm);
+#ifdef JS_TRACE_LOGGING
+    traceLoggerEnterToggleOffset_.fixup(&masm);
+    traceLoggerExitToggleOffset_.fixup(&masm);
+#endif
     postDebugPrologueOffset_.fixup(&masm);
 
     // Note: There is an extra entry in the bytecode type map for the search hint, see below.
@@ -184,6 +189,8 @@ BaselineCompiler::compile()
         BaselineScript::New(script, prologueOffset_.offset(),
                             epilogueOffset_.offset(),
                             spsPushToggleOffset_.offset(),
+                            traceLoggerEnterToggleOffset_.offset(),
+                            traceLoggerExitToggleOffset_.offset(),
                             postDebugPrologueOffset_.offset(),
                             icEntries_.length(),
                             pcMappingIndexEntries.length(),
@@ -238,6 +245,11 @@ BaselineCompiler::compile()
     // All SPS instrumentation is emitted toggled off.  Toggle them on if needed.
     if (cx->runtime()->spsProfiler.enabled())
         baselineScript->toggleSPS(true);
+
+#ifdef JS_TRACE_LOGGING
+    // Initialize the tracelogger instrumentation.
+    baselineScript->initTraceLogger(cx->runtime(), script);
+#endif
 
     uint32_t *bytecodeMap = baselineScript->bytecodeTypeMap();
     types::FillBytecodeTypeMap(script, bytecodeMap);
@@ -375,13 +387,8 @@ BaselineCompiler::emitPrologue()
         masm.bind(&earlyStackCheckFailed);
 
 #ifdef JS_TRACE_LOGGING
-    TraceLogger *logger = TraceLoggerForMainThread(cx->runtime());
-    Register loggerReg = RegisterSet::Volatile().takeGeneral();
-    masm.Push(loggerReg);
-    masm.movePtr(ImmPtr(logger), loggerReg);
-    masm.tracelogStart(loggerReg, TraceLogCreateTextId(logger, script));
-    masm.tracelogStart(loggerReg, TraceLogger::Baseline);
-    masm.Pop(loggerReg);
+    if (!emitTraceLoggerEnter())
+        return false;
 #endif
 
     // Record the offset of the prologue, because Ion can bailout before
@@ -425,15 +432,8 @@ BaselineCompiler::emitEpilogue()
     masm.bind(&return_);
 
 #ifdef JS_TRACE_LOGGING
-    TraceLogger *logger = TraceLoggerForMainThread(cx->runtime());
-    Register loggerReg = RegisterSet::Volatile().takeGeneral();
-    masm.Push(loggerReg);
-    masm.movePtr(ImmPtr(logger), loggerReg);
-    masm.tracelogStop(loggerReg, TraceLogger::Baseline);
-    // Stop the script. Using a stop without checking the textId, since we
-    // we didn't save the textId for the script.
-    masm.tracelogStop(loggerReg);
-    masm.Pop(loggerReg);
+    if (!emitTraceLoggerExit())
+        return false;
 #endif
 
     // Pop SPS frame if necessary
@@ -551,7 +551,7 @@ BaselineCompiler::emitStackCheck(bool earlyCheck)
     else if (needsEarlyStackCheck())
         phase = CHECK_OVER_RECURSED;
 
-    if (!callVM(CheckOverRecursedWithExtraInfo, phase))
+    if (!callVMNonOp(CheckOverRecursedWithExtraInfo, phase))
         return false;
 
     masm.bind(&skipCall);
@@ -626,7 +626,7 @@ BaselineCompiler::initScopeChain()
             masm.loadBaselineFramePtr(BaselineFrameReg, R0.scratchReg());
             pushArg(R0.scratchReg());
 
-            if (!callVM(HeavyweightFunPrologueInfo, phase))
+            if (!callVMNonOp(HeavyweightFunPrologueInfo, phase))
                 return false;
         }
     } else {
@@ -640,7 +640,7 @@ BaselineCompiler::initScopeChain()
             masm.loadBaselineFramePtr(BaselineFrameReg, R0.scratchReg());
             pushArg(R0.scratchReg());
 
-            if (!callVM(StrictEvalPrologueInfo, phase))
+            if (!callVMNonOp(StrictEvalPrologueInfo, phase))
                 return false;
         }
     }
@@ -772,6 +772,64 @@ BaselineCompiler::emitDebugTrap()
 
     return true;
 }
+
+#ifdef JS_TRACE_LOGGING
+bool
+BaselineCompiler::emitTraceLoggerEnter()
+{
+    TraceLoggerThread *logger = TraceLoggerForMainThread(cx->runtime());
+    RegisterSet regs = RegisterSet::Volatile();
+    Register loggerReg = regs.takeGeneral();
+    Register scriptReg = regs.takeGeneral();
+
+    Label noTraceLogger;
+    traceLoggerEnterToggleOffset_ = masm.toggledJump(&noTraceLogger);
+
+    masm.Push(loggerReg);
+    masm.Push(scriptReg);
+
+    masm.movePtr(ImmPtr(logger), loggerReg);
+
+    // Script start.
+    masm.movePtr(ImmGCPtr(script), scriptReg);
+    masm.loadPtr(Address(scriptReg, JSScript::offsetOfBaselineScript()), scriptReg);
+    Address scriptEvent(scriptReg, BaselineScript::offsetOfTraceLoggerScriptEvent());
+    masm.computeEffectiveAddress(scriptEvent, scriptReg);
+    masm.tracelogStartEvent(loggerReg, scriptReg);
+
+    // Engine start.
+    masm.tracelogStartId(loggerReg, TraceLogger_Baseline, /* force = */ true);
+
+    masm.Pop(scriptReg);
+    masm.Pop(loggerReg);
+
+    masm.bind(&noTraceLogger);
+
+    return true;
+}
+
+bool
+BaselineCompiler::emitTraceLoggerExit()
+{
+    TraceLoggerThread *logger = TraceLoggerForMainThread(cx->runtime());
+    Register loggerReg = RegisterSet::Volatile().takeGeneral();
+
+    Label noTraceLogger;
+    traceLoggerExitToggleOffset_ = masm.toggledJump(&noTraceLogger);
+
+    masm.Push(loggerReg);
+    masm.movePtr(ImmPtr(logger), loggerReg);
+
+    masm.tracelogStopId(loggerReg, TraceLogger_Baseline, /* force = */ true);
+    masm.tracelogStopId(loggerReg, TraceLogger_Scripts, /* force = */ true);
+
+    masm.Pop(loggerReg);
+
+    masm.bind(&noTraceLogger);
+
+    return true;
+}
+#endif
 
 bool
 BaselineCompiler::emitSPSPush()
@@ -2945,6 +3003,17 @@ static const VMFunction PopBlockScopeInfo = FunctionInfo<PopBlockScopeFn>(jit::P
 bool
 BaselineCompiler::emit_JSOP_POPBLOCKSCOPE()
 {
+#ifdef DEBUG
+    // The static block scope ends right before this op. Assert we generated
+    // JIT code for the previous op, so that pcForNativeOffset does not
+    // incorrectly return this pc instead of the previous one and confuse
+    // ScopeIter::settle. TODO: remove this when bug 1118826 lands.
+    PCMappingEntry &prevEntry = pcMappingEntries_[pcMappingEntries_.length() - 2];
+    PCMappingEntry &curEntry = pcMappingEntries_[pcMappingEntries_.length() - 1];
+    MOZ_ASSERT(curEntry.pcOffset == script->pcToOffset(pc));
+    MOZ_ASSERT(curEntry.nativeOffset > prevEntry.nativeOffset);
+#endif
+
     // Call a stub to pop the block from the block chain.
     prepareVMCall();
 
@@ -2960,8 +3029,12 @@ static const VMFunction DebugLeaveBlockInfo = FunctionInfo<DebugLeaveBlockFn>(ji
 bool
 BaselineCompiler::emit_JSOP_DEBUGLEAVEBLOCK()
 {
-    if (!compileDebugInstrumentation_)
+    if (!compileDebugInstrumentation_) {
+        // See the comment in emit_JSOP_POPBLOCKSCOPE.
+        if (*GetNextPc(pc) == JSOP_POPBLOCKSCOPE)
+            masm.nop();
         return true;
+    }
 
     prepareVMCall();
     masm.loadBaselineFramePtr(BaselineFrameReg, R0.scratchReg());

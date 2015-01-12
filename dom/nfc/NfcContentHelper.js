@@ -55,6 +55,7 @@ const NFC_IPC_MSG_NAMES = [
   "NFC:WriteNDEFResponse",
   "NFC:MakeReadOnlyResponse",
   "NFC:FormatResponse",
+  "NFC:TransceiveResponse",
   "NFC:ConnectResponse",
   "NFC:CloseResponse",
   "NFC:CheckP2PRegistrationResponse",
@@ -174,6 +175,18 @@ NfcContentHelper.prototype = {
     });
   },
 
+  transceive: function transceive(sessionToken, technology, command, callback) {
+    let requestId = callback.getCallbackId();
+    this._requestMap[requestId] = callback;
+
+    cpmm.sendAsyncMessage("NFC:Transceive", {
+      requestId: requestId,
+      sessionToken: sessionToken,
+      technology: technology,
+      command: command
+    });
+  },
+
   connect: function connect(techType, sessionToken, callback) {
     let requestId = callback.getCallbackId();
     this._requestMap[requestId] = callback;
@@ -280,6 +293,9 @@ NfcContentHelper.prototype = {
       case "NFC:CheckP2PRegistrationResponse":
         this.handleCheckP2PRegistrationResponse(result);
         break;
+      case "NFC:TransceiveResponse":
+        this.handleTransceiveResponse(result);
+        break;
       case "NFC:ConnectResponse": // Fall through.
       case "NFC:CloseResponse":
       case "NFC:WriteNDEFResponse":
@@ -301,13 +317,22 @@ NfcContentHelper.prototype = {
             this.eventListener.notifyPeerLost(result.sessionToken);
             break;
           case NFC.TAG_EVENT_FOUND:
-            let event = new NfcTagEvent(result.techList,
-                                        result.tagType,
-                                        result.maxNDEFSize,
-                                        result.isReadOnly,
-                                        result.isFormatable);
+            let ndefInfo = null;
+            if (result.tagType !== undefined &&
+                result.maxNDEFSize !== undefined &&
+                result.isReadOnly !== undefined &&
+                result.isFormatable !== undefined) {
+              ndefInfo = new TagNDEFInfo(result.tagType,
+                                         result.maxNDEFSize,
+                                         result.isReadOnly,
+                                         result.isFormatable);
+            }
 
-            this.eventListener.notifyTagFound(result.sessionToken, event, result.records);
+            let tagInfo = new TagInfo(result.techList, result.tagId);
+            this.eventListener.notifyTagFound(result.sessionToken,
+                                              tagInfo,
+                                              ndefInfo,
+                                              result.records);
             break;
           case NFC.TAG_EVENT_LOST:
             this.eventListener.notifyTagLost(result.sessionToken);
@@ -385,23 +410,49 @@ NfcContentHelper.prototype = {
     // The receiver must check the boolean mapped status code to handle.
     callback.notifySuccessWithBoolean(!result.errorMsg);
   },
+
+  handleTransceiveResponse: function handleTransceiveResponse(result) {
+    let requestId = result.requestId;
+    let callback = this._requestMap[requestId];
+    if (!callback) {
+      debug("not firing message handleTransceiveResponse for id: " + requestId);
+      return;
+    }
+    delete this._requestMap[requestId];
+
+    if (result.errorMsg) {
+      callback.notifyError(result.errorMsg);
+      return;
+    }
+
+    callback.notifySuccessWithByteArray(result.response);
+  },
 };
 
-function NfcTagEvent(techList, tagType, maxNDEFSize, isReadOnly, isFormatable) {
-  this.techList = techList;
+function TagNDEFInfo(tagType, maxNDEFSize, isReadOnly, isFormatable) {
   this.tagType = tagType;
   this.maxNDEFSize = maxNDEFSize;
   this.isReadOnly = isReadOnly;
   this.isFormatable = isFormatable;
 }
-NfcTagEvent.prototype = {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsINfcTagEvent]),
+TagNDEFInfo.prototype = {
+  QueryInterface: XPCOMUtils.generateQI([Ci.nsITagNDEFInfo]),
 
-  techList: null,
   tagType: null,
   maxNDEFSize: 0,
   isReadOnly: false,
   isFormatable: false
+};
+
+function TagInfo(techList, tagId) {
+  this.techList = techList;
+  this.tagId = tagId;
+}
+TagInfo.prototype = {
+  QueryInterface: XPCOMUtils.generateQI([Ci.nsITagInfo]),
+
+  techList: null,
+  tagId: null,
 };
 
 if (NFC_ENABLED) {

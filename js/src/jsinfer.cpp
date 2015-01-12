@@ -49,26 +49,31 @@ using mozilla::PodCopy;
 using mozilla::PodZero;
 
 static inline jsid
-id_prototype(JSContext *cx) {
+id_prototype(JSContext *cx)
+{
     return NameToId(cx->names().prototype);
 }
 
+#ifdef DEBUG
+
 static inline jsid
-id___proto__(JSContext *cx) {
+id___proto__(JSContext *cx)
+{
     return NameToId(cx->names().proto);
 }
 
 static inline jsid
-id_constructor(JSContext *cx) {
+id_constructor(JSContext *cx)
+{
     return NameToId(cx->names().constructor);
 }
 
 static inline jsid
-id_caller(JSContext *cx) {
+id_caller(JSContext *cx)
+{
     return NameToId(cx->names().caller);
 }
 
-#ifdef DEBUG
 const char *
 types::TypeIdStringImpl(jsid id)
 {
@@ -84,6 +89,7 @@ types::TypeIdStringImpl(jsid id)
     PutEscapedString(bufs[which], 100, JSID_TO_FLAT_STRING(id), 0);
     return bufs[which];
 }
+
 #endif
 
 /////////////////////////////////////////////////////////////////////
@@ -3669,12 +3675,12 @@ types::UseNewTypeForClone(JSFunction *fun)
 
     uint32_t begin, end;
     if (fun->hasScript()) {
-        if (!fun->nonLazyScript()->usesArgumentsAndApply())
+        if (!fun->nonLazyScript()->usesArgumentsApplyAndThis())
             return false;
         begin = fun->nonLazyScript()->sourceStart();
         end = fun->nonLazyScript()->sourceEnd();
     } else {
-        if (!fun->lazyScript()->usesArgumentsAndApply())
+        if (!fun->lazyScript()->usesArgumentsApplyAndThis())
             return false;
         begin = fun->lazyScript()->begin();
         end = fun->lazyScript()->end();
@@ -4574,7 +4580,6 @@ ConstraintTypeSet::sweep(Zone *zone, AutoClearTypeInferenceStateOnOOM &oom)
     // IsAboutToBeFinalized doesn't work right on tenured objects when called
     // during a minor collection.
     MOZ_ASSERT(!zone->runtimeFromMainThread()->isHeapMinorCollecting());
-    MOZ_ASSERT(!zone->runtimeFromMainThread()->isFJMinorCollecting());
 
     /*
      * Purge references to type objects that are no longer live. Type sets hold
@@ -4648,7 +4653,9 @@ TypeObject::clearProperties()
 bool
 TypeObject::needsSweep()
 {
-    return generation() != zone()->types.generation;
+    // Note: this can be called off thread during compacting GCs, in which case
+    // nothing will be running on the main thread.
+    return generation() != zoneFromAnyThread()->types.generation;
 }
 #endif
 
@@ -5262,11 +5269,11 @@ TypeObject::setAddendum(AddendumKind kind, void *addendum)
 {
     MOZ_ASSERT(!needsSweep());
     MOZ_ASSERT(kind <= (OBJECT_FLAG_ADDENDUM_MASK >> OBJECT_FLAG_ADDENDUM_SHIFT));
-    MOZ_ASSERT(!(flags_ & OBJECT_FLAG_ADDENDUM_MASK));
+    MOZ_ASSERT(addendumKind() == 0 || addendumKind() == kind);
 
     // Manually trigger barriers if we are clearing a TypeNewScript. Other
     // kinds of addendums are immutable.
-    if (addendum_) {
+    if (newScript()) {
         MOZ_ASSERT(kind == Addendum_NewScript);
         TypeNewScript::writeBarrierPre(newScript());
     }

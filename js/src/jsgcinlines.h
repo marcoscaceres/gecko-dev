@@ -31,12 +31,6 @@ ThreadSafeContext::isThreadLocal(T thing) const
     if (!isForkJoinContext())
         return true;
 
-#ifdef JSGC_FJGENERATIONAL
-    ForkJoinContext *cx = static_cast<ForkJoinContext*>(const_cast<ThreadSafeContext*>(this));
-    if (cx->nursery().isInsideNewspace(thing))
-        return true;
-#endif
-
     // Global invariant
     MOZ_ASSERT(!IsInsideNursery(thing));
 
@@ -72,14 +66,6 @@ ShouldNurseryAllocate(const Nursery &nursery, AllocKind kind, InitialHeap heap)
 {
     return nursery.isEnabled() && IsNurseryAllocable(kind) && heap != TenuredHeap;
 }
-
-#ifdef JSGC_FJGENERATIONAL
-inline bool
-ShouldFJNurseryAllocate(const ForkJoinNursery &nursery, AllocKind kind, InitialHeap heap)
-{
-    return IsFJNurseryAllocable(kind) && heap != TenuredHeap;
-}
-#endif
 
 inline JSGCTraceKind
 GetGCThingTraceKind(const void *thing)
@@ -330,6 +316,8 @@ class ZoneCellIter : public ZoneCellIterImpl
       : lists(&zone->allocator.arenas),
         kind(kind)
     {
+        JSRuntime *rt = zone->runtimeFromMainThread();
+
         /*
          * We have a single-threaded runtime, so there's no need to protect
          * against other threads iterating or allocating. However, we do have
@@ -339,22 +327,21 @@ class ZoneCellIter : public ZoneCellIterImpl
         if (IsBackgroundFinalized(kind) &&
             zone->allocator.arenas.needBackgroundFinalizeWait(kind))
         {
-            zone->runtimeFromMainThread()->gc.waitBackgroundSweepEnd();
+            rt->gc.waitBackgroundSweepEnd();
         }
 
         /* Evict the nursery before iterating so we can see all things. */
-        JSRuntime *rt = zone->runtimeFromMainThread();
         rt->gc.evictNursery();
 
         if (lists->isSynchronizedFreeList(kind)) {
             lists = nullptr;
         } else {
-            MOZ_ASSERT(!zone->runtimeFromMainThread()->isHeapBusy());
+            MOZ_ASSERT(!rt->isHeapBusy());
             lists->copyFreeListToArena(kind);
         }
 
         /* Assert that no GCs can occur while a ZoneCellIter is live. */
-        noAlloc.disallowAlloc(zone->runtimeFromMainThread());
+        noAlloc.disallowAlloc(rt);
 
         init(zone, kind);
     }
@@ -454,32 +441,10 @@ TryNewNurseryObject(JSContext *cx, size_t thingSize, size_t nDynamicSlots)
     return nullptr;
 }
 
-#ifdef JSGC_FJGENERATIONAL
-template <AllowGC allowGC>
-inline JSObject *
-TryNewNurseryObject(ForkJoinContext *cx, size_t thingSize, size_t nDynamicSlots)
-{
-    ForkJoinNursery &nursery = cx->nursery();
-    bool tooLarge = false;
-    JSObject *obj = nursery.allocateObject(thingSize, nDynamicSlots, tooLarge);
-    if (obj)
-        return obj;
-
-    if (!tooLarge && allowGC) {
-        nursery.minorGC();
-        obj = nursery.allocateObject(thingSize, nDynamicSlots, tooLarge);
-        if (obj)
-            return obj;
-    }
-
-    return nullptr;
-}
-#endif /* JSGC_FJGENERATIONAL */
-
 static inline bool
 PossiblyFail()
 {
-    JS_OOM_POSSIBLY_FAIL();
+    JS_OOM_POSSIBLY_FAIL_BOOL();
     return true;
 }
 
@@ -508,7 +473,7 @@ CheckAllocatorState(ThreadSafeContext *cx, AllocKind kind)
 
     // For testing out of memory conditions
     if (!PossiblyFail()) {
-        js_ReportOutOfMemory(cx);
+        js_ReportOutOfMemory(cx->asJSContext());
         return false;
     }
 
@@ -569,16 +534,6 @@ AllocateObject(ThreadSafeContext *cx, AllocKind kind, size_t nDynamicSlots, Init
         if (obj)
             return obj;
     }
-#ifdef JSGC_FJGENERATIONAL
-    if (cx->isForkJoinContext() &&
-        ShouldFJNurseryAllocate(cx->asForkJoinContext()->nursery(), kind, heap))
-    {
-        JSObject *obj =
-            TryNewNurseryObject<allowGC>(cx->asForkJoinContext(), thingSize, nDynamicSlots);
-        if (obj)
-            return obj;
-    }
-#endif
 
     HeapSlot *slots = nullptr;
     if (nDynamicSlots) {
@@ -635,8 +590,6 @@ AllocateNonObject(ThreadSafeContext *cx)
  * other hand, since these allocations are extremely common, we don't want to
  * delay GC from these allocation sites. Instead we allow the GC, but still
  * fail the allocation, forcing the non-cached path.
- *
- * Observe this won't be used for ForkJoin allocation, as it takes a JSContext*
  */
 template <AllowGC allowGC>
 inline JSObject *

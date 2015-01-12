@@ -312,12 +312,8 @@ SetObjectProperty(JSContext *cx, JSOp op, HandleValue lval, HandleId id, Mutable
 
     bool strict = op == JSOP_STRICTSETPROP;
     if (MOZ_LIKELY(!obj->getOps()->setProperty)) {
-        if (!baseops::SetPropertyHelper<SequentialExecution>(cx,
-                                                             obj.as<NativeObject>(),
-                                                             obj.as<NativeObject>(),
-                                                             id,
-                                                             baseops::Qualified,
-                                                             rref, strict))
+        if (!baseops::SetPropertyHelper(cx, obj.as<NativeObject>(), obj.as<NativeObject>(),
+                                        id, baseops::Qualified, rref, strict))
         {
             return false;
         }
@@ -1482,10 +1478,10 @@ Interpret(JSContext *cx, RunState &state)
     RootedScript script(cx);
     SET_SCRIPT(REGS.fp()->script());
 
-    TraceLogger *logger = TraceLoggerForMainThread(cx->runtime());
-    uint32_t scriptLogId = TraceLogCreateTextId(logger, script);
-    TraceLogStartEvent(logger, scriptLogId);
-    TraceLogStartEvent(logger, TraceLogger::Interpreter);
+    TraceLoggerThread *logger = TraceLoggerForMainThread(cx->runtime());
+    TraceLoggerEvent scriptEvent(logger, TraceLogger_Scripts, script);
+    TraceLogStartEvent(logger, scriptEvent);
+    TraceLogStartEvent(logger, TraceLogger_Interpreter);
 
     /*
      * Pool of rooters for use in this interpreter frame. References to these
@@ -1775,9 +1771,8 @@ CASE(JSOP_RETRVAL)
     if (activation.entryFrame() != REGS.fp()) {
         // Stop the engine. (No details about which engine exactly, could be
         // interpreter, Baseline or IonMonkey.)
-        TraceLogStopEvent(logger);
-        // Stop the script. (Again no details about which script exactly.)
-        TraceLogStopEvent(logger);
+        TraceLogStopEvent(logger, TraceLogger_Engine);
+        TraceLogStopEvent(logger, TraceLogger_Scripts);
 
         interpReturnOK = Debugger::onLeaveFrame(cx, REGS.fp(), interpReturnOK);
 
@@ -2613,9 +2608,11 @@ CASE(JSOP_FUNCALL)
 
     SET_SCRIPT(REGS.fp()->script());
 
-    uint32_t scriptLogId = TraceLogCreateTextId(logger, script);
-    TraceLogStartEvent(logger, scriptLogId);
-    TraceLogStartEvent(logger, TraceLogger::Interpreter);
+    {
+        TraceLoggerEvent event(logger, TraceLogger_Scripts, script);
+        TraceLogStartEvent(logger, event);
+        TraceLogStartEvent(logger, TraceLogger_Interpreter);
+    }
 
     if (!REGS.fp()->prologue(cx))
         goto error;
@@ -3526,8 +3523,8 @@ DEFAULT()
 
     gc::MaybeVerifyBarriers(cx, true);
 
-    TraceLogStopEvent(logger);
-    TraceLogStopEvent(logger, scriptLogId);
+    TraceLogStopEvent(logger, TraceLogger_Engine);
+    TraceLogStopEvent(logger, scriptEvent);
 
     /*
      * This path is used when it's guaranteed the method can be finished

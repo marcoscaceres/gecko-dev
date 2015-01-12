@@ -72,8 +72,8 @@ GetTransformToAncestorsParentLayer(Layer* aStart, const LayerMetricsWrapper& aAn
        ancestorParent ? iter != ancestorParent : iter.IsValid();
        iter = iter.GetParent()) {
     transform = transform * iter.GetTransform();
-    // If the layer has a non-transient async transform then we need to apply it here
-    // because it will get applied by the APZ in the compositor as well
+    // If the layer has a pres shell resolution, the compositor will apply
+    // a scale to scale to this transform. Apply it here too.
     const FrameMetrics& metrics = iter.Metrics();
     transform.PostScale(metrics.mPresShellResolution, metrics.mPresShellResolution, 1.f);
   }
@@ -152,7 +152,7 @@ ClientTiledPaintedLayer::BeginPaint()
   // Compute the critical display port that applies to this layer in the
   // LayoutDevice space of this layer.
   ParentLayerRect criticalDisplayPort =
-    (displayportMetrics.mCriticalDisplayPort * displayportMetrics.GetZoom())
+    (displayportMetrics.GetCriticalDisplayPort() * displayportMetrics.GetZoom())
     + displayportMetrics.mCompositionBounds.TopLeft();
   mPaintData.mCriticalDisplayPort = RoundedOut(
     ApplyParentLayerToLayerTransform(transformDisplayPortToLayer, criticalDisplayPort));
@@ -189,7 +189,7 @@ ClientTiledPaintedLayer::UseFastPath()
 
   bool multipleTransactionsNeeded = gfxPlatform::GetPlatform()->UseProgressivePaint()
                                  || gfxPrefs::UseLowPrecisionBuffer()
-                                 || !parentMetrics.mCriticalDisplayPort.IsEmpty();
+                                 || !parentMetrics.GetCriticalDisplayPort().IsEmpty();
   bool isFixed = GetIsFixedPosition() || GetParent()->GetIsFixedPosition();
   return !multipleTransactionsNeeded || isFixed || parentMetrics.GetDisplayPort().IsEmpty();
 }

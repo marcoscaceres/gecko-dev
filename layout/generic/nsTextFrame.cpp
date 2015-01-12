@@ -561,10 +561,11 @@ template<typename T>
 gfxTextRun *
 MakeTextRun(const T *aText, uint32_t aLength,
             gfxFontGroup *aFontGroup, const gfxFontGroup::Parameters* aParams,
-            uint32_t aFlags)
+            uint32_t aFlags, gfxMissingFontRecorder *aMFR)
 {
     nsAutoPtr<gfxTextRun> textRun(aFontGroup->MakeTextRun(aText, aLength,
-                                                          aParams, aFlags));
+                                                          aParams, aFlags,
+                                                          aMFR));
     if (!textRun) {
         return nullptr;
     }
@@ -842,6 +843,7 @@ public:
     mCurrentFramesAllSameTextRun(nullptr),
     mContext(aContext),
     mLineContainer(aLineContainer),
+    mMissingFonts(aPresContext->MissingFontRecorder()),
     mBidiEnabled(aPresContext->BidiEnabled()),
     mSkipIncompleteTextRuns(false),
     mWhichTextRun(aWhichTextRun),
@@ -971,7 +973,7 @@ public:
                                             aCapitalize, mContext);
     }
 
-    void Finish() {
+    void Finish(gfxMissingFontRecorder* aMFR) {
       NS_ASSERTION(!(mTextRun->GetFlags() &
                      (gfxTextRunFactory::TEXT_UNUSED_FLAGS |
                       nsTextFrameUtils::TEXT_UNUSED_FLAG)),
@@ -979,7 +981,7 @@ public:
       if (mTextRun->GetFlags() & nsTextFrameUtils::TEXT_IS_TRANSFORMED) {
         nsTransformedTextRun* transformedTextRun =
           static_cast<nsTransformedTextRun*>(mTextRun);
-        transformedTextRun->FinishSettingProperties(mContext);
+        transformedTextRun->FinishSettingProperties(mContext, aMFR);
       }
       // The way nsTransformedTextRun is implemented, its glyph runs aren't
       // available until after nsTransformedTextRun::FinishSettingProperties()
@@ -1007,6 +1009,7 @@ private:
   // The common ancestor of the current frame and the previous leaf frame
   // on the line, or null if there was no previous leaf frame.
   nsIFrame*                     mCommonAncestorWithLastFrame;
+  gfxMissingFontRecorder*       mMissingFonts;
   // mMaxTextLength is an upper bound on the size of the text in all mapped frames
   // The value UINT32_MAX represents overflow; text will be discarded
   uint32_t                      mMaxTextLength;
@@ -1506,7 +1509,7 @@ void BuildTextRunsScanner::FlushLineBreaks(gfxTextRun* aTrailingTextRun)
       // TODO cause frames associated with the textrun to be reflowed, if they
       // aren't being reflowed already!
     }
-    mBreakSinks[i]->Finish();
+    mBreakSinks[i]->Finish(mMissingFonts);
   }
   mBreakSinks.Clear();
 
@@ -1896,7 +1899,7 @@ BuildTextRunsScanner::BuildTextRunForFrames(void* aTextBuffer)
     textFlags |= GetSpacingFlags(WordSpacing(f));
     nsTextFrameUtils::CompressionMode compression =
       CSSWhitespaceToCompressionMode[textStyle->mWhiteSpace];
-    if ((enabledJustification || f->StyleContext()->IsDirectlyInsideRuby()) &&
+    if ((enabledJustification || f->StyleContext()->IsInlineDescendantOfRuby()) &&
         !textStyle->WhiteSpaceIsSignificant() && !isSVG) {
       textFlags |= gfxTextRunFactory::TEXT_ENABLE_SPACING;
     }
@@ -2138,27 +2141,31 @@ BuildTextRunsScanner::BuildTextRunForFrames(void* aTextBuffer)
   if (mDoubleByteText) {
     const char16_t* text = static_cast<const char16_t*>(textPtr);
     if (transformingFactory) {
-      textRun = transformingFactory->MakeTextRun(text, transformedLength, &params,
-                                                 fontGroup, textFlags, styles.Elements());
+      textRun = transformingFactory->MakeTextRun(text, transformedLength,
+                                                 &params, fontGroup, textFlags,
+                                                 styles.Elements(), true);
       if (textRun) {
         // ownership of the factory has passed to the textrun
         transformingFactory.forget();
       }
     } else {
-      textRun = MakeTextRun(text, transformedLength, fontGroup, &params, textFlags);
+      textRun = MakeTextRun(text, transformedLength, fontGroup, &params,
+                            textFlags, mMissingFonts);
     }
   } else {
     const uint8_t* text = static_cast<const uint8_t*>(textPtr);
     textFlags |= gfxFontGroup::TEXT_IS_8BIT;
     if (transformingFactory) {
-      textRun = transformingFactory->MakeTextRun(text, transformedLength, &params,
-                                                 fontGroup, textFlags, styles.Elements());
+      textRun = transformingFactory->MakeTextRun(text, transformedLength,
+                                                 &params, fontGroup, textFlags,
+                                                 styles.Elements(), true);
       if (textRun) {
         // ownership of the factory has passed to the textrun
         transformingFactory.forget();
       }
     } else {
-      textRun = MakeTextRun(text, transformedLength, fontGroup, &params, textFlags);
+      textRun = MakeTextRun(text, transformedLength, fontGroup, &params,
+                            textFlags, mMissingFonts);
     }
   }
   if (!textRun) {
@@ -2761,7 +2768,7 @@ static int32_t FindChar(const nsTextFragment* frag,
 
 static bool IsChineseOrJapanese(nsIFrame* aFrame)
 {
-  if (aFrame->StyleContext()->IsDirectlyInsideRuby()) {
+  if (aFrame->StyleContext()->IsInlineDescendantOfRuby()) {
     // Always treat ruby as CJ language so that those characters can
     // be expanded properly even when surrounded by other language.
     return true;
@@ -8241,7 +8248,7 @@ nsTextFrame::ReflowText(nsLineLayout& aLineLayout, nscoord aAvailableWidth,
   gfxBreakPriority breakPriority;
   aLineLayout.GetLastOptionalBreakPosition(&unusedOffset, &breakPriority);
   gfxTextRun::SuppressBreak suppressBreak = gfxTextRun::eNoSuppressBreak;
-  if (StyleContext()->IsDirectlyInsideRuby()) {
+  if (StyleContext()->IsInlineDescendantOfRuby()) {
     suppressBreak = gfxTextRun::eSuppressAllBreaks;
   } else if (!aLineLayout.LineIsBreakable()) {
     suppressBreak = gfxTextRun::eSuppressInitialBreak;
@@ -8510,7 +8517,7 @@ nsTextFrame::ReflowText(nsLineLayout& aLineLayout, nscoord aAvailableWidth,
   if (!textStyle->WhiteSpaceIsSignificant() &&
       (lineContainer->StyleText()->mTextAlign == NS_STYLE_TEXT_ALIGN_JUSTIFY ||
        lineContainer->StyleText()->mTextAlignLast == NS_STYLE_TEXT_ALIGN_JUSTIFY ||
-       StyleContext()->IsDirectlyInsideRuby()) &&
+       StyleContext()->IsInlineDescendantOfRuby()) &&
       !lineContainer->IsSVGText()) {
     AddStateBits(TEXT_JUSTIFICATION_ENABLED);
     provider.ComputeJustification(offset, charsFit);

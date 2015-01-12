@@ -752,8 +752,6 @@ js::Nursery::collect(JSRuntime *rt, JS::gcreason::Reason reason, TypeObjectList 
 
     AutoStopVerifyingBarriers av(rt, false);
 
-    gcstats::AutoPhase ap(rt->gc.stats, gcstats::PHASE_MINOR_GC);
-
     // Move objects pointed to by roots from the nursery to the major heap.
     MinorCollectionTracer trc(rt, this);
 
@@ -798,7 +796,10 @@ js::Nursery::collect(JSRuntime *rt, JS::gcreason::Reason reason, TypeObjectList 
     TIME_END(markRuntime);
 
     TIME_START(markDebugger);
-    Debugger::markAll(&trc);
+    {
+        gcstats::AutoPhase ap(rt->gc.stats, gcstats::PHASE_MARK_ROOTS);
+        Debugger::markAll(&trc);
+    }
     TIME_END(markDebugger);
 
     TIME_START(clearNewObjectCache);
@@ -824,7 +825,7 @@ js::Nursery::collect(JSRuntime *rt, JS::gcreason::Reason reason, TypeObjectList 
 
     // Update any slot or element pointers whose destination has been tenured.
     TIME_START(updateJitActivations);
-    js::jit::UpdateJitActivationsForMinorGC<Nursery>(&rt->mainThread, &trc);
+    js::jit::UpdateJitActivationsForMinorGC(&rt->mainThread, &trc);
     forwardedBuffers.finish();
     TIME_END(updateJitActivations);
 

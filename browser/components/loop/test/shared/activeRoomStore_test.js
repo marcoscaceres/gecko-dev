@@ -20,11 +20,7 @@ describe("loop.store.ActiveRoomStore", function () {
     sandbox.stub(dispatcher, "dispatch");
 
     fakeMozLoop = {
-<<<<<<< HEAD
-      setLoopCharPref: sandbox.stub(),
-=======
       setLoopPref: sandbox.stub(),
->>>>>>> upstream/master
       rooms: {
         get: sinon.stub(),
         join: sinon.stub(),
@@ -357,6 +353,12 @@ describe("loop.store.ActiveRoomStore", function () {
       store.setStoreState({roomToken: "tokenFake"});
     });
 
+    it("should set the room state to JOINING", function() {
+      store.gotMediaPermission();
+
+      expect(store.getStoreState().roomState).eql(ROOM_STATES.JOINING);
+    });
+
     it("should call rooms.join on mozLoop", function() {
       store.gotMediaPermission();
 
@@ -668,7 +670,22 @@ describe("loop.store.ActiveRoomStore", function () {
         "fakeToken", "1627384950");
     });
 
+<<<<<<< HEAD
     it("should set the state to ENDED", function() {
+=======
+    it("should call mozLoop.rooms.leave if the room state is JOINING",
+      function() {
+        store.setStoreState({roomState: ROOM_STATES.JOINING});
+
+        store.windowUnload();
+
+        sinon.assert.calledOnce(fakeMozLoop.rooms.leave);
+        sinon.assert.calledWithExactly(fakeMozLoop.rooms.leave,
+          "fakeToken", "1627384950");
+      });
+
+    it("should set the state to CLOSING", function() {
+>>>>>>> 687d4ca8abb2afbbb778d0eaf27751f3a1bd1132
       store.windowUnload();
 
       expect(store._storeState.roomState).eql(ROOM_STATES.ENDED);

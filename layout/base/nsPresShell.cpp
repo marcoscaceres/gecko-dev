@@ -5817,12 +5817,10 @@ PresShell::MarkImagesInListVisible(const nsDisplayList& aList)
 }
 
 static PLDHashOperator
-RemoveAndStore(nsRefPtrHashKey<nsIImageLoadingContent>* aEntry, void* userArg)
+DecrementVisibleCount(nsRefPtrHashKey<nsIImageLoadingContent>* aEntry, void*)
 {
-  nsTArray< nsRefPtr<nsIImageLoadingContent> >* array =
-    static_cast< nsTArray< nsRefPtr<nsIImageLoadingContent> >* >(userArg);
-  array->AppendElement(aEntry->GetKey());
-  return PL_DHASH_REMOVE;
+  aEntry->GetKey()->DecrementVisibleCount();
+  return PL_DHASH_NEXT;
 }
 
 void
@@ -5830,15 +5828,12 @@ PresShell::RebuildImageVisibilityDisplayList(const nsDisplayList& aList)
 {
   MOZ_ASSERT(!mImageVisibilityVisited, "already visited?");
   mImageVisibilityVisited = true;
-  // Remove the entries of the mVisibleImages hashtable and put them in the
-  // beforeImageList array.
-  nsTArray< nsRefPtr<nsIImageLoadingContent> > beforeImageList;
-  beforeImageList.SetCapacity(mVisibleImages.Count());
-  mVisibleImages.EnumerateEntries(RemoveAndStore, &beforeImageList);
+  // Remove the entries of the mVisibleImages hashtable and put them in
+  // oldVisibleImages.
+  nsTHashtable< nsRefPtrHashKey<nsIImageLoadingContent> > oldVisibleImages;
+  mVisibleImages.SwapElements(oldVisibleImages);
   MarkImagesInListVisible(aList);
-  for (size_t i = 0; i < beforeImageList.Length(); ++i) {
-    beforeImageList[i]->DecrementVisibleCount();
-  }
+  oldVisibleImages.EnumerateEntries(DecrementVisibleCount, nullptr);
 }
 
 /* static */ void
@@ -5855,13 +5850,6 @@ PresShell::ClearImageVisibilityVisited(nsView* aView, bool aClear)
   for (nsView* v = aView->GetFirstChild(); v; v = v->GetNextSibling()) {
     ClearImageVisibilityVisited(v, v->GetViewManager() != vm);
   }
-}
-
-static PLDHashOperator
-DecrementVisibleCount(nsRefPtrHashKey<nsIImageLoadingContent>* aEntry, void* userArg)
-{
-  aEntry->GetKey()->DecrementVisibleCount();
-  return PL_DHASH_NEXT;
 }
 
 void
@@ -5968,11 +5956,10 @@ PresShell::RebuildImageVisibility(nsRect* aRect)
     return;
   }
 
-  // Remove the entries of the mVisibleImages hashtable and put them in the
-  // beforeImageList array.
-  nsTArray< nsRefPtr<nsIImageLoadingContent> > beforeImageList;
-  beforeImageList.SetCapacity(mVisibleImages.Count());
-  mVisibleImages.EnumerateEntries(RemoveAndStore, &beforeImageList);
+  // Remove the entries of the mVisibleImages hashtable and put them in
+  // oldVisibleImages.
+  nsTHashtable< nsRefPtrHashKey<nsIImageLoadingContent> > oldVisibleImages;
+  mVisibleImages.SwapElements(oldVisibleImages);
 
   nsRect vis(nsPoint(0, 0), rootFrame->GetSize());
   if (aRect) {
@@ -5980,9 +5967,7 @@ PresShell::RebuildImageVisibility(nsRect* aRect)
   }
   MarkImagesInSubtreeVisible(rootFrame, vis);
 
-  for (size_t i = 0; i < beforeImageList.Length(); ++i) {
-    beforeImageList[i]->DecrementVisibleCount();
-  }
+  oldVisibleImages.EnumerateEntries(DecrementVisibleCount, nullptr);
 }
 
 void
@@ -8815,17 +8800,21 @@ PresShell::ShouldIgnoreInvalidation()
 void
 PresShell::WillPaint()
 {
+  // Check the simplest things first.  In particular, it's important to
+  // check mIsActive before making any of the more expensive calls such
+  // as GetRootPresContext, for the case of a browser with a large
+  // number of tabs.
+  // Don't bother doing anything if some viewmanager in our tree is painting
+  // while we still have painting suppressed or we are not active.
+  if (!mIsActive || mPaintingSuppressed || !IsVisible()) {
+    return;
+  }
+
   nsRootPresContext* rootPresContext = mPresContext->GetRootPresContext();
   if (!rootPresContext) {
     // In some edge cases, such as when we don't have a root frame yet,
     // we can't find the root prescontext. There's nothing to do in that
     // case.
-    return;
-  }
-
-  // Don't bother doing anything if some viewmanager in our tree is painting
-  // while we still have painting suppressed or we are not active.
-  if (mPaintingSuppressed || !mIsActive || !IsVisible()) {
     return;
   }
 
@@ -8876,7 +8865,7 @@ PresShell::DidPaintWindow()
 bool
 PresShell::IsVisible()
 {
-  if (!mViewManager)
+  if (!mIsActive || !mViewManager)
     return false;
 
   nsView* view = mViewManager->GetRootView();
@@ -8886,7 +8875,7 @@ PresShell::IsVisible()
   // inner view of subdoc frame
   view = view->GetParent();
   if (!view)
-    return mIsActive;
+    return true;
 
   // subdoc view
   view = view->GetParent();

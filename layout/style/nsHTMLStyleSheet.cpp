@@ -169,13 +169,10 @@ MappedAttrTable_MatchEntry(PLDHashTable *table, const PLDHashEntryHdr *hdr,
 }
 
 static const PLDHashTableOps MappedAttrTable_Ops = {
-  PL_DHashAllocTable,
-  PL_DHashFreeTable,
   MappedAttrTable_HashKey,
   MappedAttrTable_MatchEntry,
   PL_DHashMoveEntryStub,
   MappedAttrTable_ClearEntry,
-  PL_DHashFinalizeStub,
   nullptr
 };
 
@@ -226,13 +223,10 @@ LangRuleTable_InitEntry(PLDHashTable *table, PLDHashEntryHdr *hdr,
 }
 
 static const PLDHashTableOps LangRuleTable_Ops = {
-  PL_DHashAllocTable,
-  PL_DHashFreeTable,
   LangRuleTable_HashKey,
   LangRuleTable_MatchEntry,
   PL_DHashMoveEntryStub,
   LangRuleTable_ClearEntry,
-  PL_DHashFinalizeStub,
   LangRuleTable_InitEntry
 };
 
@@ -489,7 +483,7 @@ nsHTMLStyleSheet::UniqueMappedAttributes(nsMappedAttributes* aMapped)
 {
   if (!mMappedAttrTable.ops) {
     PL_DHashTableInit(&mMappedAttrTable, &MappedAttrTable_Ops,
-                      nullptr, sizeof(MappedAttrTableEntry));
+                      sizeof(MappedAttrTableEntry));
   }
   MappedAttrTableEntry *entry = static_cast<MappedAttrTableEntry*>
                                            (PL_DHashTableAdd(&mMappedAttrTable, aMapped));
@@ -523,7 +517,7 @@ nsHTMLStyleSheet::LangRuleFor(const nsString& aLanguage)
 {
   if (!mLangRuleTable.ops) {
     PL_DHashTableInit(&mLangRuleTable, &LangRuleTable_Ops,
-                      nullptr, sizeof(LangRuleTableEntry));
+                      sizeof(LangRuleTableEntry));
   }
   LangRuleTableEntry *entry = static_cast<LangRuleTableEntry*>
     (PL_DHashTableAdd(&mLangRuleTable, &aLanguage));

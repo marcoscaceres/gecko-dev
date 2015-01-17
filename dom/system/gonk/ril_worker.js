@@ -1980,6 +1980,10 @@ RilObject.prototype = {
 
   holdConference: function(options) {
     if (this._isCdma) {
+      // We cannot hold a conference call on CDMA.
+      options.success = false;
+      options.errorMsg = GECKO_ERROR_GENERIC_FAILURE;
+      this.sendChromeMessage(options);
       return;
     }
 
@@ -1988,6 +1992,10 @@ RilObject.prototype = {
 
   resumeConference: function(options) {
     if (this._isCdma) {
+      // We cannot resume a conference call on CDMA
+      options.success = false;
+      options.errorMsg = GECKO_ERROR_GENERIC_FAILURE;
+      this.sendChromeMessage(options);
       return;
     }
 
@@ -15495,7 +15503,7 @@ ICCContactHelperObject.prototype = {
    */
   readAllPhonebookSets: function(pbrs, onsuccess, onerror) {
     let allContacts = [], pbrIndex = 0;
-    let readPhonebook = function readPhonebook(contacts) {
+    let readPhonebook = function(contacts) {
       if (contacts) {
         allContacts = allContacts.concat(contacts);
       }

@@ -1715,6 +1715,8 @@ public:
    * @param aString the string to convert the newlines inside [in/out]
    */
   static void PlatformToDOMLineBreaks(nsString &aString);
+  static NS_WARN_UNUSED_RESULT bool PlatformToDOMLineBreaks(nsString &aString,
+                                                            const mozilla::fallible_t&);
 
   /**
    * Populates aResultString with the contents of the string-buffer aBuf, up
@@ -1858,6 +1860,15 @@ public:
   static bool IsResourceTimingEnabled()
   {
     return sIsResourceTimingEnabled;
+  }
+
+  /*
+   * Returns true if URL setters should percent encode the Hash/Ref segment
+   * and getters should return the percent decoded value of the segment
+   */
+  static bool EncodeDecodeURLHash()
+  {
+    return sEncodeDecodeURLHash;
   }
 
   /**
@@ -2323,6 +2334,7 @@ private:
   static bool sIsPerformanceTimingEnabled;
   static bool sIsResourceTimingEnabled;
   static bool sIsExperimentalAutocompleteEnabled;
+  static bool sEncodeDecodeURLHash;
 
   static nsHtml5StringParser* sHTMLFragmentParser;
   static nsIParser* sXMLFragmentParser;

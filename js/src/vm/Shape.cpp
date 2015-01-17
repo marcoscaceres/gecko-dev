@@ -49,14 +49,16 @@ ShapeTable::init(ExclusiveContext *cx, Shape *lastProp)
      * Use rt->calloc for memory accounting and overpressure handling
      * without OOM reporting. See ShapeTable::change.
      */
-    entries_ = cx->pod_calloc<Entry>(JS_BIT(sizeLog2));
+    size = JS_BIT(sizeLog2);
+    entries_ = cx->pod_calloc<Entry>(size);
     if (!entries_)
         return false;
 
+    MOZ_ASSERT(sizeLog2 <= HASH_BITS);
     hashShift_ = HASH_BITS - sizeLog2;
+
     for (Shape::Range<NoGC> r(lastProp); !r.empty(); r.popFront()) {
         Shape &shape = r.front();
-        MOZ_ASSERT(cx->isThreadLocal(&shape));
         Entry &entry = search(shape.propid(), true);
 
         /*
@@ -66,6 +68,10 @@ ShapeTable::init(ExclusiveContext *cx, Shape *lastProp)
         if (!entry.shape())
             entry.setPreservingCollision(&shape);
     }
+
+    MOZ_ASSERT(capacity() == size);
+    MOZ_ASSERT(size >= MIN_SIZE);
+    MOZ_ASSERT(!needsToGrow());
     return true;
 }
 
@@ -108,7 +114,6 @@ bool
 Shape::makeOwnBaseShape(ExclusiveContext *cx)
 {
     MOZ_ASSERT(!base()->isOwned());
-    MOZ_ASSERT(cx->isThreadLocal(this));
     assertSameCompartmentDebugOnly(cx, compartment());
 
     BaseShape *nbase = js_NewGCBaseShape<NoGC>(cx);
@@ -169,13 +174,13 @@ Shape::hashify(ExclusiveContext *cx, Shape *shape)
  * size, so we simply make hash2 odd.
  */
 static HashNumber
-Hash1(HashNumber hash0, int shift)
+Hash1(HashNumber hash0, uint32_t shift)
 {
     return hash0 >> shift;
 }
 
 static HashNumber
-Hash2(HashNumber hash0, int log2, int shift)
+Hash2(HashNumber hash0, uint32_t log2, uint32_t shift)
 {
     return ((hash0 << log2) >> shift) | 1;
 }
@@ -189,7 +194,7 @@ ShapeTable::search(jsid id, bool adding)
     /* Compute the primary hash address. */
     HashNumber hash0 = HashId(id);
     HashNumber hash1 = Hash1(hash0, hashShift_);
-    Entry *entry = entries_ + hash1;
+    Entry *entry = &getEntry(hash1);
 
     /* Miss: return space for a new entry. */
     if (entry->isFree())
@@ -201,7 +206,7 @@ ShapeTable::search(jsid id, bool adding)
         return *entry;
 
     /* Collision: double hash. */
-    int sizeLog2 = HASH_BITS - hashShift_;
+    uint32_t sizeLog2 = HASH_BITS - hashShift_;
     HashNumber hash2 = Hash2(hash0, sizeLog2, hashShift_);
     uint32_t sizeMask = JS_BITMASK(sizeLog2);
 
@@ -222,10 +227,10 @@ ShapeTable::search(jsid id, bool adding)
 #endif
     }
 
-    for (;;) {
+    while (true) {
         hash1 -= hash2;
         hash1 &= sizeMask;
-        entry = entries_ + hash1;
+        entry = &getEntry(hash1);
 
         if (entry->isFree())
             return (adding && firstRemoved) ? *firstRemoved : *entry;
@@ -255,10 +260,9 @@ ShapeTable::search(jsid id, bool adding)
 void
 ShapeTable::fixupAfterMovingGC()
 {
-    int log2 = HASH_BITS - hashShift_;
-    uint32_t size = JS_BIT(log2);
+    uint32_t size = capacity();
     for (HashNumber i = 0; i < size; i++) {
-        Entry &entry = entries_[i];
+        Entry &entry = getEntry(i);
         Shape *shape = entry.shape();
         if (shape && IsForwarded(shape))
             entry.setPreservingCollision(Forwarded(shape));
@@ -270,35 +274,37 @@ bool
 ShapeTable::change(int log2Delta, ExclusiveContext *cx)
 {
     MOZ_ASSERT(entries_);
+    MOZ_ASSERT(-1 <= log2Delta && log2Delta <= 1);
 
     /*
      * Grow, shrink, or compress by changing this->entries_.
      */
-    int oldlog2 = HASH_BITS - hashShift_;
-    int newlog2 = oldlog2 + log2Delta;
-    uint32_t oldsize = JS_BIT(oldlog2);
-    uint32_t newsize = JS_BIT(newlog2);
-    Entry *newTable = cx->pod_calloc<Entry>(newsize);
+    uint32_t oldLog2 = HASH_BITS - hashShift_;
+    uint32_t newLog2 = oldLog2 + log2Delta;
+    uint32_t oldSize = JS_BIT(oldLog2);
+    uint32_t newSize = JS_BIT(newLog2);
+    Entry *newTable = cx->pod_calloc<Entry>(newSize);
     if (!newTable)
         return false;
 
     /* Now that we have newTable allocated, update members. */
-    hashShift_ = HASH_BITS - newlog2;
+    MOZ_ASSERT(newLog2 <= HASH_BITS);
+    hashShift_ = HASH_BITS - newLog2;
     removedCount_ = 0;
     Entry *oldTable = entries_;
     entries_ = newTable;
 
     /* Copy only live entries, leaving removed and free ones behind. */
-    for (Entry *oldEntry = oldTable; oldsize != 0; oldEntry++) {
-        Shape *shape = oldEntry->shape();
-        MOZ_ASSERT(cx->isThreadLocal(shape));
-        if (shape) {
+    for (Entry *oldEntry = oldTable; oldSize != 0; oldEntry++) {
+        if (Shape *shape = oldEntry->shape()) {
             Entry &entry = search(shape->propid(), true);
             MOZ_ASSERT(entry.isFree());
             entry.setShape(shape);
         }
-        oldsize--;
+        oldSize--;
     }
+
+    MOZ_ASSERT(capacity() == newSize);
 
     /* Finally, free the old entries storage. */
     js_free(oldTable);
@@ -311,7 +317,9 @@ ShapeTable::grow(ExclusiveContext *cx)
     MOZ_ASSERT(needsToGrow());
 
     uint32_t size = capacity();
-    int delta = removedCount_ < size >> 2;
+    int delta = removedCount_ < (size >> 2);
+
+    MOZ_ASSERT(entryCount_ + removedCount_ <= size - 1);
 
     if (!change(delta, cx) && entryCount_ + removedCount_ == size - 1) {
         js_ReportOutOfMemory(cx);
@@ -430,13 +438,6 @@ js::NativeObject::toDictionaryMode(ExclusiveContext *cx)
     /* We allocate the shapes from cx->compartment(), so make sure it's right. */
     MOZ_ASSERT(cx->isInsideCurrentCompartment(this));
 
-    /*
-     * This function is thread safe as long as the object is thread local. It
-     * does not modify the shared shapes, and only allocates newly allocated
-     * (and thus also thread local) shapes.
-     */
-    MOZ_ASSERT(cx->isThreadLocal(this));
-
     uint32_t span = slotSpan();
 
     Rooted<NativeObject*> self(cx, this);
@@ -495,7 +496,7 @@ NativeObject::addProperty(ExclusiveContext *cx, HandleNativeObject obj, HandleId
     MOZ_ASSERT(setter != JS_StrictPropertyStub);
 
     bool extensible;
-    if (!JSObject::isExtensible(cx, obj, &extensible))
+    if (!IsExtensible(cx, obj, &extensible))
         return nullptr;
     if (!extensible) {
         if (cx->isJSContext())
@@ -531,7 +532,6 @@ NativeObject::addPropertyInternal(ExclusiveContext *cx,
                                   unsigned flags, ShapeTable::Entry *entry,
                                   bool allowDictionary)
 {
-    MOZ_ASSERT(cx->isThreadLocal(obj));
     MOZ_ASSERT_IF(!allowDictionary, !obj->inDictionaryMode());
     MOZ_ASSERT(getter != JS_PropertyStub);
     MOZ_ASSERT(setter != JS_StrictPropertyStub);
@@ -701,7 +701,6 @@ NativeObject::putProperty(ExclusiveContext *cx, HandleNativeObject obj, HandleId
                           PropertyOp getter, StrictPropertyOp setter,
                           uint32_t slot, unsigned attrs, unsigned flags)
 {
-    MOZ_ASSERT(cx->isThreadLocal(obj));
     MOZ_ASSERT(!JSID_IS_VOID(id));
     MOZ_ASSERT(getter != JS_PropertyStub);
     MOZ_ASSERT(setter != JS_StrictPropertyStub);
@@ -736,7 +735,7 @@ NativeObject::putProperty(ExclusiveContext *cx, HandleNativeObject obj, HandleId
          */
         bool extensible;
 
-        if (!JSObject::isExtensible(cx, obj, &extensible))
+        if (!IsExtensible(cx, obj, &extensible))
             return nullptr;
 
         if (!extensible) {
@@ -892,7 +891,6 @@ NativeObject::changeProperty(ExclusiveContext *cx, HandleNativeObject obj,
                              HandleShape shape, unsigned attrs,
                              unsigned mask, PropertyOp getter, StrictPropertyOp setter)
 {
-    MOZ_ASSERT(cx->isThreadLocal(obj));
     MOZ_ASSERT(obj->containsPure(shape));
     MOZ_ASSERT(getter != JS_PropertyStub);
     MOZ_ASSERT(setter != JS_StrictPropertyStub);
@@ -995,8 +993,8 @@ NativeObject::removeProperty(ExclusiveContext *cx, jsid id_)
 
         if (entry->hadCollision()) {
             entry->setRemoved();
-            table.incRemovedCount();
             table.decEntryCount();
+            table.incRemovedCount();
         } else {
             entry->setFree();
             table.decEntryCount();
@@ -1095,8 +1093,6 @@ Shape *
 NativeObject::replaceWithNewEquivalentShape(ExclusiveContext *cx, Shape *oldShape, Shape *newShape,
                                             bool accessorShape)
 {
-    MOZ_ASSERT(cx->isThreadLocal(this));
-    MOZ_ASSERT(cx->isThreadLocal(oldShape));
     MOZ_ASSERT(cx->isInsideCurrentCompartment(oldShape));
     MOZ_ASSERT_IF(oldShape != lastProperty(),
                   inDictionaryMode() && lookup(cx, oldShape->propidRef()) == oldShape);
@@ -1232,38 +1228,6 @@ Shape::setObjectMetadata(JSContext *cx, JSObject *metadata, TaggedProto proto, S
 
     RootedShape lastRoot(cx, last);
     return replaceLastProperty(cx, base, proto, lastRoot);
-}
-
-/* static */ bool
-JSObject::preventExtensions(JSContext *cx, HandleObject obj, bool *succeeded)
-{
-    if (obj->is<ProxyObject>())
-        return js::Proxy::preventExtensions(cx, obj, succeeded);
-
-    if (!obj->nonProxyIsExtensible()) {
-        *succeeded = true;
-        return true;
-    }
-
-    /*
-     * Force lazy properties to be resolved by iterating over the objects' own
-     * properties.
-     */
-    AutoIdVector props(cx);
-    if (!js::GetPropertyKeys(cx, obj, JSITER_HIDDEN | JSITER_OWNONLY, &props))
-        return false;
-
-    /*
-     * Convert all dense elements to sparse properties. This will shrink the
-     * initialized length and capacity of the object to zero and ensure that no
-     * new dense elements can be added without calling growElements(), which
-     * checks isExtensible().
-     */
-    if (obj->isNative() && !NativeObject::sparsifyDenseElements(cx, obj.as<NativeObject>()))
-        return false;
-
-    *succeeded = true;
-    return obj->setFlag(cx, BaseShape::NOT_EXTENSIBLE, GENERATE_SHAPE);
 }
 
 bool

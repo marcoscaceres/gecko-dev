@@ -140,13 +140,10 @@ struct ResourceHashEntry : public PLDHashEntryHdr {
 };
 
 static const PLDHashTableOps gResourceTableOps = {
-    PL_DHashAllocTable,
-    PL_DHashFreeTable,
     ResourceHashEntry::HashKey,
     ResourceHashEntry::MatchEntry,
     PL_DHashMoveEntryStub,
     PL_DHashClearEntryStub,
-    PL_DHashFinalizeStub,
     nullptr
 };
 
@@ -178,13 +175,10 @@ struct LiteralHashEntry : public PLDHashEntryHdr {
 };
 
 static const PLDHashTableOps gLiteralTableOps = {
-    PL_DHashAllocTable,
-    PL_DHashFreeTable,
     LiteralHashEntry::HashKey,
     LiteralHashEntry::MatchEntry,
     PL_DHashMoveEntryStub,
     PL_DHashClearEntryStub,
-    PL_DHashFinalizeStub,
     nullptr
 };
 
@@ -215,13 +209,10 @@ struct IntHashEntry : public PLDHashEntryHdr {
 };
 
 static const PLDHashTableOps gIntTableOps = {
-    PL_DHashAllocTable,
-    PL_DHashFreeTable,
     IntHashEntry::HashKey,
     IntHashEntry::MatchEntry,
     PL_DHashMoveEntryStub,
     PL_DHashClearEntryStub,
-    PL_DHashFinalizeStub,
     nullptr
 };
 
@@ -256,13 +247,10 @@ struct DateHashEntry : public PLDHashEntryHdr {
 };
 
 static const PLDHashTableOps gDateTableOps = {
-    PL_DHashAllocTable,
-    PL_DHashFreeTable,
     DateHashEntry::HashKey,
     DateHashEntry::MatchEntry,
     PL_DHashMoveEntryStub,
     PL_DHashClearEntryStub,
-    PL_DHashFinalizeStub,
     nullptr
 };
 
@@ -376,13 +364,10 @@ struct BlobHashEntry : public PLDHashEntryHdr {
 };
 
 static const PLDHashTableOps gBlobTableOps = {
-    PL_DHashAllocTable,
-    PL_DHashFreeTable,
     BlobHashEntry::HashKey,
     BlobHashEntry::MatchEntry,
     PL_DHashMoveEntryStub,
     PL_DHashClearEntryStub,
-    PL_DHashFinalizeStub,
     nullptr
 };
 
@@ -530,7 +515,7 @@ public:
     NS_DECL_NSIRDFNODE
 
     // nsIRDFDate
-    NS_IMETHOD GetValue(PRTime *value);
+    NS_IMETHOD GetValue(PRTime *value) MOZ_OVERRIDE;
 
 private:
     virtual ~DateImpl();
@@ -637,7 +622,7 @@ public:
     NS_DECL_NSIRDFNODE
 
     // nsIRDFInt
-    NS_IMETHOD GetValue(int32_t *value);
+    NS_IMETHOD GetValue(int32_t *value) MOZ_OVERRIDE;
 
 private:
     virtual ~IntImpl();
@@ -760,20 +745,16 @@ RDFServiceImpl::Init()
     if (! mNamedDataSources)
         return NS_ERROR_OUT_OF_MEMORY;
 
-    PL_DHashTableInit(&mResources, &gResourceTableOps, nullptr,
+    PL_DHashTableInit(&mResources, &gResourceTableOps,
                       sizeof(ResourceHashEntry));
 
-    PL_DHashTableInit(&mLiterals, &gLiteralTableOps, nullptr,
-                      sizeof(LiteralHashEntry));
+    PL_DHashTableInit(&mLiterals, &gLiteralTableOps, sizeof(LiteralHashEntry));
 
-    PL_DHashTableInit(&mInts, &gIntTableOps, nullptr,
-                      sizeof(IntHashEntry));
+    PL_DHashTableInit(&mInts, &gIntTableOps, sizeof(IntHashEntry));
 
-    PL_DHashTableInit(&mDates, &gDateTableOps, nullptr,
-                      sizeof(DateHashEntry));
+    PL_DHashTableInit(&mDates, &gDateTableOps, sizeof(DateHashEntry));
 
-    PL_DHashTableInit(&mBlobs, &gBlobTableOps, nullptr,
-                      sizeof(BlobHashEntry));
+    PL_DHashTableInit(&mBlobs, &gBlobTableOps, sizeof(BlobHashEntry));
 
     mDefaultResourceFactory = do_GetClassObject(kRDFDefaultResourceCID, &rv);
     NS_ASSERTION(NS_SUCCEEDED(rv), "unable to get default resource factory");

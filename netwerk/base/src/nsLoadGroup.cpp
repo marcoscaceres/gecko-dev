@@ -1156,17 +1156,14 @@ nsresult nsLoadGroup::Init()
 {
     static const PLDHashTableOps hash_table_ops =
     {
-        PL_DHashAllocTable,
-        PL_DHashFreeTable,
         PL_DHashVoidPtrKeyStub,
         RequestHashMatchEntry,
         PL_DHashMoveEntryStub,
         RequestHashClearEntry,
-        PL_DHashFinalizeStub,
         RequestHashInitEntry
     };
 
-    PL_DHashTableInit(&mRequests, &hash_table_ops, nullptr,
+    PL_DHashTableInit(&mRequests, &hash_table_ops,
                       sizeof(RequestMapEntry));
 
     mConnectionInfo = new nsLoadGroupConnectionInfo();

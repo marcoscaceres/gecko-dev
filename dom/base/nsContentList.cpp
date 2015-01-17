@@ -208,18 +208,15 @@ NS_GetContentList(nsINode* aRootNode,
 
   static const PLDHashTableOps hash_table_ops =
   {
-    PL_DHashAllocTable,
-    PL_DHashFreeTable,
     ContentListHashtableHashKey,
     ContentListHashtableMatchEntry,
     PL_DHashMoveEntryStub,
-    PL_DHashClearEntryStub,
-    PL_DHashFinalizeStub
+    PL_DHashClearEntryStub
   };
 
   // Initialize the hashtable if needed.
   if (!gContentListHashTable.ops) {
-    PL_DHashTableInit(&gContentListHashTable, &hash_table_ops, nullptr,
+    PL_DHashTableInit(&gContentListHashTable, &hash_table_ops,
                       sizeof(ContentListHashEntry));
   }
 
@@ -321,19 +318,16 @@ GetFuncStringContentList(nsINode* aRootNode,
 
   static const PLDHashTableOps hash_table_ops =
   {
-    PL_DHashAllocTable,
-    PL_DHashFreeTable,
     FuncStringContentListHashtableHashKey,
     FuncStringContentListHashtableMatchEntry,
     PL_DHashMoveEntryStub,
-    PL_DHashClearEntryStub,
-    PL_DHashFinalizeStub
+    PL_DHashClearEntryStub
   };
 
   // Initialize the hashtable if needed.
   if (!gFuncStringContentListHashTable.ops) {
     PL_DHashTableInit(&gFuncStringContentListHashTable, &hash_table_ops,
-                      nullptr, sizeof(FuncStringContentListHashEntry));
+                      sizeof(FuncStringContentListHashEntry));
   }
 
   FuncStringContentListHashEntry *entry = nullptr;

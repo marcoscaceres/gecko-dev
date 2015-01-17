@@ -94,12 +94,8 @@
 #      define MOZ_HAVE_CXX11_OVERRIDE
 #      define MOZ_HAVE_CXX11_FINAL       final
 #    endif
-#    if MOZ_GCC_VERSION_AT_LEAST(4, 6, 0)
 #      define MOZ_HAVE_CXX11_CONSTEXPR
-#    endif
-#    if MOZ_GCC_VERSION_AT_LEAST(4, 5, 0)
 #      define MOZ_HAVE_EXPLICIT_CONVERSION
-#    endif
 #  else
      /* __final is a non-C++11 GCC synonym for 'final', per GCC r176655. */
 #    if MOZ_GCC_VERSION_AT_LEAST(4, 7, 0)
@@ -529,20 +525,6 @@
 #  define MOZ_UNSAFE_REF(reason) /* nothing */
 #  define MOZ_NO_ADDREF_RELEASE_ON_RETURN /* nothing */
 #endif /* MOZ_CLANG_PLUGIN */
-
-/*
- * MOZ_THIS_IN_INITIALIZER_LIST is used to avoid a warning when we know that
- * it's safe to use 'this' in an initializer list.
- */
-#ifdef _MSC_VER
-#  define MOZ_THIS_IN_INITIALIZER_LIST() \
-     __pragma(warning(push)) \
-     __pragma(warning(disable:4355)) \
-     this \
-     __pragma(warning(pop))
-#else
-#  define MOZ_THIS_IN_INITIALIZER_LIST() this
-#endif
 
 #endif /* __cplusplus */
 

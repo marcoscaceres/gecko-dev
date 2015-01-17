@@ -760,19 +760,15 @@ XULDocument::AddBroadcastListenerFor(Element& aBroadcaster, Element& aListener,
     }
 
     static const PLDHashTableOps gOps = {
-        PL_DHashAllocTable,
-        PL_DHashFreeTable,
         PL_DHashVoidPtrKeyStub,
         PL_DHashMatchEntryStub,
         PL_DHashMoveEntryStub,
         ClearBroadcasterMapEntry,
-        PL_DHashFinalizeStub,
         nullptr
     };
 
     if (! mBroadcasterMap) {
-        mBroadcasterMap =
-            PL_NewDHashTable(&gOps, nullptr, sizeof(BroadcasterMapEntry));
+        mBroadcasterMap = PL_NewDHashTable(&gOps, sizeof(BroadcasterMapEntry));
 
         if (! mBroadcasterMap) {
             aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
@@ -2711,11 +2707,9 @@ XULDocument::LoadOverlayInternal(nsIURI* aURI, bool aIsDynamic,
             // OnStopRequest, so it needs a Terminate.
             parser->Terminate();
 
-            // Just move on to the next overlay.  NS_OpenURI could fail
-            // just because a channel could not be opened, which can happen
-            // if a file or chrome package does not exist.
+            // Just move on to the next overlay.
             ReportMissingOverlay(aURI);
-            
+
             // XXX the error could indicate an internal error as well...
             *aFailureFromContent = true;
             return rv;
@@ -2723,7 +2717,7 @@ XULDocument::LoadOverlayInternal(nsIURI* aURI, bool aIsDynamic,
 
         // If it's a 'chrome:' prototype document, then put it into
         // the prototype cache; other XUL documents will be reloaded
-        // each time.  We must do this after NS_OpenURI and AsyncOpen,
+        // each time.  We must do this after AsyncOpen,
         // or chrome code will wrongly create a cached chrome channel
         // instead of a real one. Prototypes are only cached when the
         // document to be overlayed is chrome to avoid caching overlay

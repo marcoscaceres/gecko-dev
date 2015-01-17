@@ -16,12 +16,13 @@ Cu.import("resource://gre/modules/AddonManager.jsm");
 Cu.import('resource://gre/modules/Payment.jsm');
 Cu.import("resource://gre/modules/NotificationDB.jsm");
 Cu.import("resource://gre/modules/SpatialNavigation.jsm");
-// TODO: Lazy load this based on a message...?
-Cu.import("resource://gre/modules/DownloadNotifications.jsm");
 
 #ifdef ACCESSIBILITY
 Cu.import("resource://gre/modules/accessibility/AccessFu.jsm");
 #endif
+
+XPCOMUtils.defineLazyModuleGetter(this, "DownloadNotifications",
+                                  "resource://gre/modules/DownloadNotifications.jsm");
 
 XPCOMUtils.defineLazyModuleGetter(this, "FileUtils",
                                   "resource://gre/modules/FileUtils.jsm");
@@ -372,6 +373,7 @@ var BrowserApp = {
           Cc["@mozilla.org/login-manager;1"].getService(Ci.nsILoginManager);
 
           CastingApps.init();
+          DownloadNotifications.init();
 
           // Delay this a minute because there's no rush
           setTimeout(() => {
@@ -466,7 +468,6 @@ var BrowserApp = {
 
     NativeWindow.init();
     LightWeightThemeWebInstaller.init();
-    DownloadNotifications.init();
     FormAssistant.init();
     IndexedDB.init();
     HealthReportStatusListener.init();
@@ -2266,9 +2267,14 @@ var NativeWindow = {
   contextmenus: {
     items: {}, //  a list of context menu items that we may show
     DEFAULT_HTML5_ORDER: -1, // Sort order for HTML5 context menu items
+    _isLongPressEnabled: 1, // Android longpress events can be ignored during robocop tests.
 
     init: function() {
       BrowserApp.deck.addEventListener("contextmenu", this.show.bind(this), false);
+
+      Messaging.addListener((data) => {
+        return {result: (this._isLongPressEnabled = data.isLongPressEnabled)};
+      }, "ContextMenu:SetIsLongpressEnabled");
     },
 
     add: function() {
@@ -2561,6 +2567,11 @@ var NativeWindow = {
      * for chrome consumers to do lazy menuitem construction
      */
     show: function(event) {
+      if (!this._isLongPressEnabled) {
+        dump("Longpress Event is ignored by request");
+        return;
+      }
+
       // Android Long-press / contextmenu event provides clientX/Y data. This is not provided
       // by mochitest: test_browserElement_inproc_ContextmenuEvents.html.
       if (!event.clientX || !event.clientY) {

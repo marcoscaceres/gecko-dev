@@ -243,6 +243,7 @@ bool nsContentUtils::sFullscreenApiIsContentOnly = false;
 bool nsContentUtils::sIsPerformanceTimingEnabled = false;
 bool nsContentUtils::sIsResourceTimingEnabled = false;
 bool nsContentUtils::sIsExperimentalAutocompleteEnabled = false;
+bool nsContentUtils::sEncodeDecodeURLHash = false;
 
 uint32_t nsContentUtils::sHandlingInputTimeout = 1000;
 
@@ -478,18 +479,15 @@ nsContentUtils::Init()
   if (!sEventListenerManagersHash.ops) {
     static const PLDHashTableOps hash_table_ops =
     {
-      PL_DHashAllocTable,
-      PL_DHashFreeTable,
       PL_DHashVoidPtrKeyStub,
       PL_DHashMatchEntryStub,
       PL_DHashMoveEntryStub,
       EventListenerManagerHashClearEntry,
-      PL_DHashFinalizeStub,
       EventListenerManagerHashInitEntry
     };
 
     PL_DHashTableInit(&sEventListenerManagersHash, &hash_table_ops,
-                      nullptr, sizeof(EventListenerManagerMapEntry));
+                      sizeof(EventListenerManagerMapEntry));
 
     RegisterStrongMemoryReporter(new DOMEventListenerManagersHashReporter());
   }
@@ -519,6 +517,9 @@ nsContentUtils::Init()
 
   Preferences::AddBoolVarCache(&sIsExperimentalAutocompleteEnabled,
                                "dom.forms.autocomplete.experimental", false);
+
+  Preferences::AddBoolVarCache(&sEncodeDecodeURLHash,
+                               "dom.url.encode_decode_hash", false);
 
   Preferences::AddUintVarCache(&sHandlingInputTimeout,
                                "dom.event.handling-user-input-time-limit",
@@ -6255,15 +6256,31 @@ void nsContentUtils::RemoveNewlines(nsString &aString)
 void
 nsContentUtils::PlatformToDOMLineBreaks(nsString &aString)
 {
+  if (!PlatformToDOMLineBreaks(aString, mozilla::fallible_t())) {
+    aString.AllocFailed(aString.Length());
+  }
+}
+
+bool
+nsContentUtils::PlatformToDOMLineBreaks(nsString& aString, const fallible_t& aFallible)
+{
   if (aString.FindChar(char16_t('\r')) != -1) {
     // Windows linebreaks: Map CRLF to LF:
-    aString.ReplaceSubstring(MOZ_UTF16("\r\n"),
-                             MOZ_UTF16("\n"));
+    if (!aString.ReplaceSubstring(MOZ_UTF16("\r\n"),
+                                  MOZ_UTF16("\n"),
+                                  aFallible)) {
+      return false;
+    }
 
     // Mac linebreaks: Map any remaining CR to LF:
-    aString.ReplaceSubstring(MOZ_UTF16("\r"),
-                             MOZ_UTF16("\n"));
+    if (!aString.ReplaceSubstring(MOZ_UTF16("\r"),
+                                  MOZ_UTF16("\n"),
+                                  aFallible)) {
+      return false;
+    }
   }
+
+  return true;
 }
 
 void

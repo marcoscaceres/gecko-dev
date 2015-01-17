@@ -1802,8 +1802,8 @@ ContentChild::ProcessingError(Result what)
 {
     switch (what) {
     case MsgDropped:
-        QuickExit();
-
+        NS_WARNING("MsgDropped in ContentChild");
+        return;
     case MsgNotKnown:
         NS_RUNTIMEABORT("aborting because of MsgNotKnown");
     case MsgNotAllowed:
@@ -2486,6 +2486,20 @@ ContentChild::RecvAssociatePluginId(const uint32_t& aPluginId,
                                     const base::ProcessId& aProcessId)
 {
     plugins::PluginModuleContentParent::AssociatePluginId(aPluginId, aProcessId);
+    return true;
+}
+
+bool
+ContentChild::RecvShutdown()
+{
+    nsCOMPtr<nsIObserverService> os = services::GetObserverService();
+    if (os) {
+        os->NotifyObservers(this, "content-child-shutdown", nullptr);
+    }
+
+    // Ignore errors here. If this fails, the parent will kill us after a
+    // timeout.
+    unused << SendFinishShutdown();
     return true;
 }
 

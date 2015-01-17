@@ -341,7 +341,11 @@ InspectorPanel.prototype = {
                         "chrome://browser/content/devtools/layoutview/view.xhtml",
                         "layoutview" == defaultTab);
 
-    let ruleViewTab = this.sidebar.getTab("ruleview");
+    if (this.target.form.animationsActor) {
+      this.sidebar.addTab("animationinspector",
+                          "chrome://browser/content/devtools/animationinspector/animation-inspector.xhtml",
+                          "animationinspector" == defaultTab);
+    }
 
     this.sidebar.show();
   },

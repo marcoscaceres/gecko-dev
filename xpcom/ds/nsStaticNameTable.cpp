@@ -94,13 +94,10 @@ caseInsensitiveStringHashKey(PLDHashTable* aTable, const void* aKey)
 }
 
 static const struct PLDHashTableOps nametable_CaseInsensitiveHashTableOps = {
-  PL_DHashAllocTable,
-  PL_DHashFreeTable,
   caseInsensitiveStringHashKey,
   matchNameKeysCaseInsensitive,
   PL_DHashMoveEntryStub,
   PL_DHashClearEntryStub,
-  PL_DHashFinalizeStub,
   nullptr,
 };
 
@@ -143,7 +140,7 @@ nsStaticCaseInsensitiveNameTable::Init(const char* const aNames[],
   }
 
   if (!PL_DHashTableInit(&mNameTable, &nametable_CaseInsensitiveHashTableOps,
-                         nullptr, sizeof(NameTableEntry), fallible_t(),
+                         sizeof(NameTableEntry), fallible_t(),
                          aLength)) {
     mNameTable.ops = nullptr;
     return false;

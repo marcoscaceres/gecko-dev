@@ -525,8 +525,8 @@ struct MainThreadWorkerStructuredCloneCallbacks
         FileImpl* blobImpl = blob->Impl();
         MOZ_ASSERT(blobImpl);
 
-        if (blobImpl->IsCCed()) {
-          NS_WARNING("Cycle collected blob objects are not supported!");
+        if (!blobImpl->MayBeClonedToOtherThreads()) {
+          NS_WARNING("Not all the blob implementations can be sent between threads.");
         } else if (WriteBlobOrFile(aCx, aWriter, blobImpl, *clonedObjects)) {
           return true;
         }
@@ -6253,8 +6253,10 @@ WorkerPrivate::CreateGlobalScope(JSContext* aCx)
     globalScope = new DedicatedWorkerGlobalScope(this);
   }
 
-  JS::Rooted<JSObject*> global(aCx, globalScope->WrapGlobalObject(aCx));
-  NS_ENSURE_TRUE(global, nullptr);
+  JS::Rooted<JSObject*> global(aCx);
+  if (!globalScope->WrapGlobalObject(aCx, &global)) {
+    return nullptr;
+  }
 
   JSAutoCompartment ac(aCx, global);
 

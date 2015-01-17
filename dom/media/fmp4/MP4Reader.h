@@ -82,8 +82,11 @@ public:
 
   virtual nsRefPtr<ShutdownPromise> Shutdown() MOZ_OVERRIDE;
 
+  virtual bool IsAsync() const MOZ_OVERRIDE { return true; }
+
 private:
 
+  bool InitDemuxer();
   void ReturnOutput(MediaData* aData, TrackType aTrack);
 
   // Sends input to decoder for aTrack, and output to the state machine,
@@ -123,6 +126,8 @@ private:
 
   size_t SizeOfQueue(TrackType aTrack);
 
+  nsRefPtr<MP4Stream> mStream;
+  int64_t mTimestampOffset;
   nsAutoPtr<mp4_demuxer::MP4Demuxer> mDemuxer;
   nsRefPtr<PlatformDecoderModule> mPlatform;
 

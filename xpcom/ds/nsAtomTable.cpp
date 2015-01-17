@@ -288,13 +288,10 @@ AtomTableInitEntry(PLDHashTable* aTable, PLDHashEntryHdr* aEntry,
 
 
 static const PLDHashTableOps AtomTableOps = {
-  PL_DHashAllocTable,
-  PL_DHashFreeTable,
   AtomTableGetHash,
   AtomTableMatchKey,
   PL_DHashMoveEntryStub,
   AtomTableClearEntry,
-  PL_DHashFinalizeStub,
   AtomTableInitEntry
 };
 
@@ -543,7 +540,7 @@ static inline void
 EnsureTableExists()
 {
   if (!gAtomTable.ops) {
-    PL_DHashTableInit(&gAtomTable, &AtomTableOps, 0,
+    PL_DHashTableInit(&gAtomTable, &AtomTableOps,
                       sizeof(AtomTableEntry), ATOM_HASHTABLE_INITIAL_LENGTH);
   }
 }

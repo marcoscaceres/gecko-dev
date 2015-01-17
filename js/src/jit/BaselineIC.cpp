@@ -3368,7 +3368,7 @@ EffectlesslyLookupProperty(JSContext *cx, HandleObject obj, HandlePropertyName n
     }
 
     if (checkObj->hasIdempotentProtoChain()) {
-        if (!JSObject::lookupProperty(cx, checkObj, name, holder, shape))
+        if (!LookupProperty(cx, checkObj, name, holder, shape))
             return false;
     } else if (checkObj->isNative()) {
         shape.set(checkObj->as<NativeObject>().lookup(cx, NameToId(name)));
@@ -6927,7 +6927,7 @@ ComputeGetPropResult(JSContext *cx, BaselineFrame *frame, JSOp op, HandlePropert
             return false;
 
         RootedId id(cx, NameToId(name));
-        if (!JSObject::getGeneric(cx, obj, obj, id, res))
+        if (!GetProperty(cx, obj, obj, id, res))
             return false;
 
 #if JS_HAS_NO_SUCH_METHOD
@@ -8296,7 +8296,7 @@ DoSetPropFallback(JSContext *cx, BaselineFrame *frame, ICSetProp_Fallback *stub_
 
     if (op == JSOP_INITPROP) {
         MOZ_ASSERT(obj->is<PlainObject>());
-        if (!DefineNativeProperty(cx, obj.as<PlainObject>(), id, rhs,
+        if (!NativeDefineProperty(cx, obj.as<PlainObject>(), id, rhs,
                                   nullptr, nullptr, JSPROP_ENUMERATE))
         {
             return false;
@@ -9115,7 +9115,7 @@ GetTemplateObjectForClassHook(JSContext *cx, JSNative hook, CallArgs &args,
         return true;
     }
 
-    if (hook == SimdTypeDescr::call) {
+    if (hook == SimdTypeDescr::call && JitSupportsSimd()) {
         Rooted<SimdTypeDescr *> descr(cx, &args.callee().as<SimdTypeDescr>());
         JSObject *obj = TypedObject::createZeroed(cx, descr, 0, gc::TenuredHeap);
         if (!obj)

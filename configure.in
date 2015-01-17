@@ -290,6 +290,7 @@ if test -n "$gonkdir" ; then
         AC_SUBST(MOZ_AUDIO_OFFLOAD)
         AC_DEFINE(MOZ_AUDIO_OFFLOAD)
         MOZ_FMP4=
+        MOZ_B2G_CAMERA=1
         MOZ_B2G_BT=1
         MOZ_B2G_BT_BLUEDROID=1
         if test -d "$gonkdir/system/bluetoothd"; then
@@ -2110,13 +2111,8 @@ ia64*-hpux*)
         # while; Intel recommends against using it.
         MOZ_OPTIMIZE_FLAGS="-O2"
     elif test "$GNU_CC" -o "$GNU_CXX"; then
-        case $GCC_VERSION in
-        4.5.*)
-            # -Os is broken on gcc 4.5.x we need to tweak it to get good results.
-            MOZ_OPTIMIZE_SIZE_TWEAK="-finline-limit=50"
-        esac
         MOZ_PGO_OPTIMIZE_FLAGS="-O3"
-        MOZ_OPTIMIZE_FLAGS="-Os $MOZ_OPTIMIZE_SIZE_TWEAK"
+        MOZ_OPTIMIZE_FLAGS="-Os"
         if test -z "$CLANG_CC"; then
            MOZ_OPTIMIZE_FLAGS="-freorder-blocks $MOZ_OPTIMIZE_FLAGS"
         fi
@@ -2365,6 +2361,9 @@ ia64*-hpux*)
         AC_DEFINE(_X86_)
         ;;
     x86_64-*)
+        if test -z "$HAVE_64BIT_BUILD"; then
+            AC_MSG_ERROR([You are targeting 64-bit but using the 32-bit compiler.])
+        fi
         if test -n "$_WIN32_MSVC"; then
             DSO_LDOPTS="$DSO_LDOPTS -MACHINE:X64"
         fi
@@ -2626,7 +2625,7 @@ if test "$GNU_CC" -a "$OS_TARGET" != WINNT; then
     ;;
   *)
     case $GCC_VERSION in
-    4.4*|4.6*)
+    4.6*)
       VISIBILITY_FLAGS='-I$(DIST)/system_wrappers -include $(MOZILLA_DIR)/config/gcc_hidden_dso_handle.h'
       ;;
     *)
@@ -3385,6 +3384,19 @@ MOZ_CHECK_HEADERS(alloca.h)
 AC_CHECK_FUNCS(strndup posix_memalign memalign)
 
 AC_CHECK_FUNCS(malloc_usable_size)
+MALLOC_USABLE_SIZE_CONST_PTR=const
+MOZ_CHECK_HEADERS([malloc.h], [
+  AC_MSG_CHECKING([whether malloc_usable_size definition can use const argument])
+  AC_TRY_COMPILE([#include <malloc.h>
+                  #include <stddef.h>
+                  size_t malloc_usable_size(const void *ptr);],
+                  [return malloc_usable_size(0);],
+                  AC_MSG_RESULT([yes]),
+                  AC_MSG_RESULT([no])
+                  MALLOC_USABLE_SIZE_CONST_PTR=)
+])
+AC_DEFINE_UNQUOTED([MALLOC_USABLE_SIZE_CONST_PTR],[$MALLOC_USABLE_SIZE_CONST_PTR])
+
 
 dnl In newer bionic headers, valloc is built but not defined,
 dnl so we check more carefully here.
@@ -3527,17 +3539,6 @@ case "$GRE_MILESTONE" in
 esac
 AC_SUBST(NIGHTLY_BUILD)
 AC_SUBST(RELEASE_BUILD)
-
-dnl ========================================================
-dnl Disable compiling sources in unified mode.
-dnl ========================================================
-
-MOZ_ARG_DISABLE_BOOL(unified-compilation,
-[  --disable-unified-compilation
-                          Disable unified compilation of some C/C++ sources],
-    MOZ_DISABLE_UNIFIED_COMPILATION=1,
-    MOZ_DISABLE_UNIFIED_COMPILATION=)
-AC_SUBST(MOZ_DISABLE_UNIFIED_COMPILATION)
 
 dnl ========================================================
 dnl Multiprocess Firefox Nightly Testing UI
@@ -6923,7 +6924,6 @@ AC_SUBST(MOZ_FRAMEPTR_FLAGS)
 AC_SUBST(MOZ_OPTIMIZE_FLAGS)
 AC_SUBST(MOZ_OPTIMIZE_LDFLAGS)
 AC_SUBST(MOZ_ALLOW_HEAP_EXECUTE_FLAGS)
-AC_SUBST(MOZ_OPTIMIZE_SIZE_TWEAK)
 AC_SUBST(MOZ_PGO)
 AC_SUBST(MOZ_PGO_OPTIMIZE_FLAGS)
 
@@ -9069,6 +9069,8 @@ if test -z "$MOZ_NATIVE_JEMALLOC" -a "$MOZ_MEMORY" && test -n "$MOZ_JEMALLOC3" -
   if test "$CROSS_COMPILE"; then
     ac_configure_args="$ac_configure_args je_cv_static_page_shift=12"
   fi
+  # Force disable DSS support in jemalloc.
+  ac_configure_args="$ac_configure_args ac_cv_func_sbrk=false"
 
   if ! test -e memory/jemalloc; then
     mkdir -p memory/jemalloc

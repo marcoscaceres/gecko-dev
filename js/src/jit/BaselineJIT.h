@@ -342,12 +342,10 @@ struct BaselineScript
     }
 
     ICEntry &icEntry(size_t index);
-    ICEntry *maybeICEntryFromReturnOffset(CodeOffsetLabel returnOffset);
     ICEntry &icEntryFromReturnOffset(CodeOffsetLabel returnOffset);
     ICEntry &icEntryFromPCOffset(uint32_t pcOffset);
     ICEntry &icEntryFromPCOffset(uint32_t pcOffset, ICEntry *prevLookedUpEntry);
     ICEntry &callVMEntryFromPCOffset(uint32_t pcOffset);
-    ICEntry *maybeICEntryFromReturnAddress(uint8_t *returnAddr);
     ICEntry &icEntryFromReturnAddress(uint8_t *returnAddr);
     uint8_t *returnAddressForIC(const ICEntry &ent);
 
@@ -368,32 +366,20 @@ struct BaselineScript
     }
 
     void copyPCMappingIndexEntries(const PCMappingIndexEntry *entries);
-
     void copyPCMappingEntries(const CompactBufferWriter &entries);
-    uint8_t *maybeNativeCodeForPC(JSScript *script, jsbytecode *pc,
-                                  PCMappingSlotInfo *slotInfo = nullptr);
+
     uint8_t *nativeCodeForPC(JSScript *script, jsbytecode *pc,
-                             PCMappingSlotInfo *slotInfo = nullptr)
-    {
-        uint8_t *code = maybeNativeCodeForPC(script, pc, slotInfo);
-        MOZ_ASSERT(code);
-        return code;
-    }
+                             PCMappingSlotInfo *slotInfo = nullptr);
 
-    jsbytecode *pcForReturnOffset(JSScript *script, uint32_t nativeOffset);
-    jsbytecode *pcForReturnAddress(JSScript *script, uint8_t *nativeAddress);
-
-    jsbytecode *pcForNativeAddress(JSScript *script, uint8_t *nativeAddress);
-    jsbytecode *pcForNativeOffset(JSScript *script, uint32_t nativeOffset);
+    // Return the bytecode offset for a given native code address. Be careful
+    // when using this method: we don't emit code for some bytecode ops, so
+    // the result may not be accurate.
+    jsbytecode *approximatePcForNativeAddress(JSScript *script, uint8_t *nativeAddress);
 
     bool addDependentAsmJSModule(JSContext *cx, DependentAsmJSModuleExit exit);
     void unlinkDependentAsmJSModules(FreeOp *fop);
     void removeDependentAsmJSModule(DependentAsmJSModuleExit exit);
 
-  private:
-    jsbytecode *pcForNativeOffset(JSScript *script, uint32_t nativeOffset, bool isReturn);
-
-  public:
     // Toggle debug traps (used for breakpoints and step mode) in the script.
     // If |pc| is nullptr, toggle traps for all ops in the script. Else, only
     // toggle traps at |pc|.
@@ -491,6 +477,9 @@ struct BaselineBailoutInfo
 
     // The native code address to resume into.
     void *resumeAddr;
+
+    // The bytecode pc where we will resume.
+    jsbytecode *resumePC;
 
     // If resuming into a TypeMonitor IC chain, this field holds the
     // address of the first stub in that chain.  If this field is

@@ -38,7 +38,6 @@
 
 #include "jsboolinlines.h"
 
-#include "jit/ExecutionMode-inl.h"
 #include "jit/shared/CodeGenerator-shared-inl.h"
 #include "vm/Interpreter-inl.h"
 
@@ -1188,17 +1187,17 @@ CreateDependentString(MacroAssembler &masm, const JSAtomState &names,
     masm.branch32(Assembler::Above, temp1, Imm32(maxInlineLength), &notInline);
 
     {
-        // Make a normal or fat inline string.
+        // Make a thin or fat inline string.
         Label stringAllocated, fatInline;
 
-        int32_t maxNormalInlineLength = latin1
-                                        ? (int32_t) JSInlineString::MAX_LENGTH_LATIN1
-                                        : (int32_t) JSInlineString::MAX_LENGTH_TWO_BYTE;
-        masm.branch32(Assembler::Above, temp1, Imm32(maxNormalInlineLength), &fatInline);
+        int32_t maxThinInlineLength = latin1
+                                      ? (int32_t) JSThinInlineString::MAX_LENGTH_LATIN1
+                                      : (int32_t) JSThinInlineString::MAX_LENGTH_TWO_BYTE;
+        masm.branch32(Assembler::Above, temp1, Imm32(maxThinInlineLength), &fatInline);
 
-        int32_t normalFlags = (latin1 ? JSString::LATIN1_CHARS_BIT : 0) | JSString::INIT_INLINE_FLAGS;
+        int32_t thinFlags = (latin1 ? JSString::LATIN1_CHARS_BIT : 0) | JSString::INIT_THIN_INLINE_FLAGS;
         masm.newGCString(string, temp2, failure);
-        masm.store32(Imm32(normalFlags), Address(string, JSString::offsetOfFlags()));
+        masm.store32(Imm32(thinFlags), Address(string, JSString::offsetOfFlags()));
         masm.jump(&stringAllocated);
 
         masm.bind(&fatInline);
@@ -3610,6 +3609,14 @@ CodeGenerator::emitObjectOrStringResultChecks(LInstruction *lir, MDefinition *mi
         masm.jump(&ok);
 
         masm.bind(&miss);
+
+        // Type set guards might miss when an object's type changes and its
+        // properties become unknown, so check for this case.
+        masm.loadPtr(Address(output, JSObject::offsetOfType()), temp);
+        masm.branchTestPtr(Assembler::NonZero,
+                           Address(temp, types::TypeObject::offsetOfFlags()),
+                           Imm32(types::OBJECT_FLAG_UNKNOWN_PROPERTIES), &ok);
+
         masm.assumeUnreachable("MIR instruction returned object with unexpected type");
 
         masm.bind(&ok);
@@ -3679,6 +3686,18 @@ CodeGenerator::emitValueResultChecks(LInstruction *lir, MDefinition *mir)
         masm.jump(&ok);
 
         masm.bind(&miss);
+
+        // Type set guards might miss when an object's type changes and its
+        // properties become unknown, so check for this case.
+        Label realMiss;
+        masm.branchTestObject(Assembler::NotEqual, output, &realMiss);
+        Register payload = masm.extractObject(output, temp1);
+        masm.loadPtr(Address(payload, JSObject::offsetOfType()), temp1);
+        masm.branchTestPtr(Assembler::NonZero,
+                           Address(temp1, types::TypeObject::offsetOfFlags()),
+                           Imm32(types::OBJECT_FLAG_UNKNOWN_PROPERTIES), &ok);
+        masm.bind(&realMiss);
+
         masm.assumeUnreachable("MIR instruction returned value with unexpected type");
 
         masm.bind(&ok);
@@ -4193,6 +4212,36 @@ CodeGenerator::visitNewTypedObject(LNewTypedObject *lir)
     masm.bind(ool->rejoin());
 }
 
+void
+CodeGenerator::visitSimdBox(LSimdBox *lir)
+{
+    FloatRegister in = ToFloatRegister(lir->input());
+    Register object = ToRegister(lir->output());
+    Register temp = ToRegister(lir->temp());
+    InlineTypedObject *templateObject = lir->mir()->templateObject();
+    gc::InitialHeap initialHeap = lir->mir()->initialHeap();
+    MIRType type = lir->mir()->input()->type();
+
+    // :TODO: We cannot spill SIMD registers (Bug 1112164) from safepoints, thus
+    // we cannot use the same oolCallVM as visitNewTypedObject for allocating
+    // SIMD Typed Objects if we are at the end of the nursery. (Bug 1119303)
+    Label bail;
+    masm.createGCObject(object, temp, templateObject, initialHeap, &bail);
+    bailoutFrom(&bail, lir->snapshot());
+
+    Address objectData(object, InlineTypedObject::offsetOfDataStart());
+    switch (type) {
+      case MIRType_Int32x4:
+        masm.storeUnalignedInt32x4(in, objectData);
+        break;
+      case MIRType_Float32x4:
+        masm.storeUnalignedFloat32x4(in, objectData);
+        break;
+      default:
+        MOZ_CRASH("Unknown SIMD kind when generating code for SimdBox.");
+    }
+}
+
 typedef js::DeclEnvObject *(*NewDeclEnvObjectFn)(JSContext *, HandleFunction, gc::InitialHeap);
 static const VMFunction NewDeclEnvObjectInfo =
     FunctionInfo<NewDeclEnvObjectFn>(DeclEnvObject::createTemplateObject);
@@ -4430,7 +4479,7 @@ CodeGenerator::visitCreateThisWithProto(LCreateThisWithProto *lir)
 }
 
 typedef JSObject *(*NewGCObjectFn)(JSContext *cx, gc::AllocKind allocKind,
-                                   gc::InitialHeap initialHeap);
+                                   gc::InitialHeap initialHeap, const js::Class *clasp);
 static const VMFunction NewGCObjectInfo =
     FunctionInfo<NewGCObjectFn>(js::jit::NewGCObject);
 
@@ -4440,11 +4489,13 @@ CodeGenerator::visitCreateThisWithTemplate(LCreateThisWithTemplate *lir)
     PlainObject *templateObject = lir->mir()->templateObject();
     gc::AllocKind allocKind = templateObject->asTenured().getAllocKind();
     gc::InitialHeap initialHeap = lir->mir()->initialHeap();
+    const js::Class *clasp = templateObject->type()->clasp();
     Register objReg = ToRegister(lir->output());
     Register tempReg = ToRegister(lir->temp());
 
     OutOfLineCode *ool = oolCallVM(NewGCObjectInfo, lir,
-                                   (ArgList(), Imm32(allocKind), Imm32(initialHeap)),
+                                   (ArgList(), Imm32(allocKind), Imm32(initialHeap),
+                                    ImmPtr(clasp)),
                                    StoreRegisterTo(objReg));
 
     // Allocate. If the FreeList is empty, call to VM, which may GC.
@@ -5376,9 +5427,9 @@ CopyStringCharsMaybeInflate(MacroAssembler &masm, Register input, Register destC
 }
 
 static void
-ConcatFatInlineString(MacroAssembler &masm, Register lhs, Register rhs, Register output,
-                      Register temp1, Register temp2, Register temp3,
-                      Label *failure, Label *failurePopTemps, bool isTwoByte)
+ConcatInlineString(MacroAssembler &masm, Register lhs, Register rhs, Register output,
+                   Register temp1, Register temp2, Register temp3,
+                   Label *failure, Label *failurePopTemps, bool isTwoByte)
 {
     // State: result length in temp2.
 
@@ -5386,14 +5437,34 @@ ConcatFatInlineString(MacroAssembler &masm, Register lhs, Register rhs, Register
     masm.branchIfRope(lhs, failure);
     masm.branchIfRope(rhs, failure);
 
-    // Allocate a JSFatInlineString.
-    masm.newGCFatInlineString(output, temp1, failure);
+    // Allocate a JSThinInlineString or JSFatInlineString.
+    size_t maxThinInlineLength;
+    if (isTwoByte)
+        maxThinInlineLength = JSThinInlineString::MAX_LENGTH_TWO_BYTE;
+    else
+        maxThinInlineLength = JSThinInlineString::MAX_LENGTH_LATIN1;
 
-    // Store length and flags.
-    uint32_t flags = JSString::INIT_FAT_INLINE_FLAGS;
-    if (!isTwoByte)
-        flags |= JSString::LATIN1_CHARS_BIT;
-    masm.store32(Imm32(flags), Address(output, JSString::offsetOfFlags()));
+    Label isFat, allocDone;
+    masm.branch32(Assembler::Above, temp2, Imm32(maxThinInlineLength), &isFat);
+    {
+        uint32_t flags = JSString::INIT_THIN_INLINE_FLAGS;
+        if (!isTwoByte)
+            flags |= JSString::LATIN1_CHARS_BIT;
+        masm.newGCString(output, temp1, failure);
+        masm.store32(Imm32(flags), Address(output, JSString::offsetOfFlags()));
+        masm.jump(&allocDone);
+    }
+    masm.bind(&isFat);
+    {
+        uint32_t flags = JSString::INIT_FAT_INLINE_FLAGS;
+        if (!isTwoByte)
+            flags |= JSString::LATIN1_CHARS_BIT;
+        masm.newGCFatInlineString(output, temp1, failure);
+        masm.store32(Imm32(flags), Address(output, JSString::offsetOfFlags()));
+    }
+    masm.bind(&allocDone);
+
+    // Store length.
     masm.store32(temp2, Address(output, JSString::offsetOfLength()));
 
     // Load chars pointer in temp2.
@@ -5625,12 +5696,12 @@ JitCompartment::generateStringConcatStub(JSContext *cx)
     masm.ret();
 
     masm.bind(&isFatInlineTwoByte);
-    ConcatFatInlineString(masm, lhs, rhs, output, temp1, temp2, temp3,
-                          &failure, &failurePopTemps, true);
+    ConcatInlineString(masm, lhs, rhs, output, temp1, temp2, temp3,
+                       &failure, &failurePopTemps, true);
 
     masm.bind(&isFatInlineLatin1);
-    ConcatFatInlineString(masm, lhs, rhs, output, temp1, temp2, temp3,
-                          &failure, &failurePopTemps, false);
+    ConcatInlineString(masm, lhs, rhs, output, temp1, temp2, temp3,
+                       &failure, &failurePopTemps, false);
 
     masm.bind(&failurePopTemps);
     masm.pop(temp2);
@@ -6917,7 +6988,7 @@ CodeGenerator::generate()
     if (!snapshots_.init())
         return false;
 
-    if (!safepoints_.init(gen->alloc(), graph.totalSlotCount()))
+    if (!safepoints_.init(gen->alloc()))
         return false;
 
     if (!generatePrologue())
@@ -6947,13 +7018,6 @@ CodeGenerator::generate()
         return false;
 
     masm.bind(&skipPrologue);
-
-#ifdef JS_TRACE_LOGGING
-    if (!gen->compilingAsmJS()) {
-        emitTracelogScriptStart();
-        emitTracelogStartEvent(TraceLogger_IonMonkey);
-    }
-#endif
 
 #ifdef DEBUG
     // Assert that the argument types are correct.
@@ -7030,13 +7094,12 @@ bool
 CodeGenerator::link(JSContext *cx, types::CompilerConstraintList *constraints)
 {
     RootedScript script(cx, gen->info().script());
-    ExecutionMode executionMode = gen->info().executionMode();
     OptimizationLevel optimizationLevel = gen->optimizationInfo().level();
 
     // We finished the new IonScript. Invalidate the current active IonScript,
     // so we can replace it with this new (probably higher optimized) version.
-    if (HasIonScript(script, executionMode)) {
-        MOZ_ASSERT(GetIonScript(script, executionMode)->isRecompiling());
+    if (script->hasIonScript()) {
+        MOZ_ASSERT(script->ionScript()->isRecompiling());
         // Do a normal invalidate, except don't cancel offThread compilations,
         // since that will cancel this compilation too.
         if (!Invalidate(cx, script, /* resetUses */ false, /* cancelOffThread*/ false))
@@ -7050,7 +7113,7 @@ CodeGenerator::link(JSContext *cx, types::CompilerConstraintList *constraints)
     // will trickle to jit::Compile() and return Method_Skipped.
     uint32_t warmUpCount = script->getWarmUpCount();
     types::RecompileInfo recompileInfo;
-    if (!types::FinishCompilation(cx, script, executionMode, constraints, &recompileInfo))
+    if (!types::FinishCompilation(cx, script, constraints, &recompileInfo))
         return true;
 
     // IonMonkey could have inferred better type information during
@@ -7144,7 +7207,7 @@ CodeGenerator::link(JSContext *cx, types::CompilerConstraintList *constraints)
     if (sps_.enabled())
         ionScript->setHasSPSInstrumentation();
 
-    SetIonScript(cx, script, executionMode, ionScript);
+    script->setIonScript(cx, ionScript);
 
     invalidateEpilogueData_.fixup(&masm);
     Assembler::PatchDataWithValueCheck(CodeLocationLabel(code, invalidateEpilogueData_),

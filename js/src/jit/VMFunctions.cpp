@@ -105,9 +105,10 @@ InvokeFunction(JSContext *cx, HandleObject obj0, uint32_t argc, Value *argv, Val
 }
 
 JSObject *
-NewGCObject(JSContext *cx, gc::AllocKind allocKind, gc::InitialHeap initialHeap)
+NewGCObject(JSContext *cx, gc::AllocKind allocKind, gc::InitialHeap initialHeap,
+            const js::Class *clasp)
 {
-    return js::NewGCObject<CanGC>(cx, allocKind, 0, initialHeap);
+    return js::NewGCObject<CanGC>(cx, allocKind, 0, initialHeap, clasp);
 }
 
 bool
@@ -202,7 +203,7 @@ MutatePrototype(JSContext *cx, HandlePlainObject obj, HandleValue value)
     RootedObject newProto(cx, value.toObjectOrNull());
 
     bool succeeded;
-    if (!JSObject::setProto(cx, obj, newProto, &succeeded))
+    if (!SetPrototype(cx, obj, newProto, &succeeded))
         return false;
     MOZ_ASSERT(succeeded);
     return true;
@@ -212,7 +213,7 @@ bool
 InitProp(JSContext *cx, HandleNativeObject obj, HandlePropertyName name, HandleValue value)
 {
     RootedId id(cx, NameToId(name));
-    return DefineNativeProperty(cx, obj, id, value, nullptr, nullptr, JSPROP_ENUMERATE);
+    return NativeDefineProperty(cx, obj, id, value, nullptr, nullptr, JSPROP_ENUMERATE);
 }
 
 template<bool Equal>
@@ -503,17 +504,17 @@ SetProperty(JSContext *cx, HandleObject obj, HandlePropertyName name, HandleValu
     }
 
     if (MOZ_LIKELY(!obj->getOps()->setProperty)) {
-        return baseops::SetPropertyHelper(
+        return NativeSetProperty(
             cx, obj.as<NativeObject>(), obj.as<NativeObject>(), id,
             (op == JSOP_SETNAME || op == JSOP_STRICTSETNAME ||
              op == JSOP_SETGNAME || op == JSOP_STRICTSETGNAME)
-            ? baseops::Unqualified
-            : baseops::Qualified,
+            ? Unqualified
+            : Qualified,
             &v,
             strict);
     }
 
-    return JSObject::setGeneric(cx, obj, obj, id, &v, strict);
+    return SetProperty(cx, obj, obj, id, &v, strict);
 }
 
 bool
@@ -597,7 +598,7 @@ OperatorIn(JSContext *cx, HandleValue key, HandleObject obj, bool *out)
 
     RootedObject obj2(cx);
     RootedShape prop(cx);
-    if (!JSObject::lookupGeneric(cx, obj, id, &obj2, &prop))
+    if (!LookupProperty(cx, obj, id, &obj2, &prop))
         return false;
 
     *out = !!prop;
@@ -784,10 +785,10 @@ bool
 DebugEpilogue(JSContext *cx, BaselineFrame *frame, jsbytecode *pc, bool ok)
 {
     // Unwind scope chain to stack depth 0.
-    ScopeIter si(frame, pc, cx);
-    UnwindAllScopes(cx, si);
+    ScopeIter si(cx, frame, pc);
+    UnwindAllScopesInFrame(cx, si);
     jsbytecode *unwindPc = frame->script()->main();
-    frame->setUnwoundScopeOverridePc(unwindPc);
+    frame->setOverridePc(unwindPc);
 
     // If Debugger::onLeaveFrame returns |true| we have to return the frame's
     // return value. If it returns |false|, the debugger threw an exception.
@@ -818,9 +819,14 @@ DebugEpilogue(JSContext *cx, BaselineFrame *frame, jsbytecode *pc, bool ok)
         JitFrameLayout *prefix = frame->framePrefix();
         EnsureExitFrame(prefix);
         cx->mainThread().jitTop = (uint8_t *)prefix;
+        return false;
     }
 
-    return ok;
+    // Clear the override pc. This is not necessary for correctness: the frame
+    // will return immediately, but this simplifies the check we emit in debug
+    // builds after each callVM, to ensure this flag is not set.
+    frame->clearOverridePc();
+    return true;
 }
 
 JSObject *
@@ -911,11 +917,19 @@ DebugAfterYield(JSContext *cx, BaselineFrame *frame)
 }
 
 bool
-GeneratorThrowOrClose(JSContext *cx, BaselineFrame *frame, HandleObject obj, HandleValue arg,
-                      uint32_t resumeKind)
+GeneratorThrowOrClose(JSContext *cx, BaselineFrame *frame, Handle<GeneratorObject*> genObj,
+                      HandleValue arg, uint32_t resumeKind)
 {
+    // Set the frame's pc to the current resume pc, so that frame iterators
+    // work. This function always returns false, so we're guaranteed to enter
+    // the exception handler where we will clear the pc.
+    JSScript *script = frame->script();
+    uint32_t offset = script->yieldOffsets()[genObj->yieldIndex()];
+    frame->setOverridePc(script->offsetToPC(offset));
+
     MOZ_ALWAYS_TRUE(DebugAfterYield(cx, frame));
-    return js::GeneratorThrowOrClose(cx, obj, arg, resumeKind);
+    MOZ_ALWAYS_FALSE(js::GeneratorThrowOrClose(cx, frame, genObj, arg, resumeKind));
+    return false;
 }
 
 bool

@@ -146,30 +146,33 @@ AssertDynamicScopeMatchesStaticScope(JSContext *cx, JSScript *script, JSObject *
     for (StaticScopeIter<NoGC> i(enclosingScope); !i.done(); i++) {
         if (i.hasDynamicScopeObject()) {
             switch (i.type()) {
-              case StaticScopeIter<NoGC>::BLOCK:
-                MOZ_ASSERT(&i.block() == scope->as<ClonedBlockObject>().staticScope());
-                scope = &scope->as<ClonedBlockObject>().enclosingScope();
-                break;
-              case StaticScopeIter<NoGC>::WITH:
-                MOZ_ASSERT(&i.staticWith() == scope->as<DynamicWithObject>().staticScope());
-                scope = &scope->as<DynamicWithObject>().enclosingScope();
-                break;
-              case StaticScopeIter<NoGC>::FUNCTION:
+              case StaticScopeIter<NoGC>::Function:
                 MOZ_ASSERT(scope->as<CallObject>().callee().nonLazyScript() == i.funScript());
                 scope = &scope->as<CallObject>().enclosingScope();
                 break;
-              case StaticScopeIter<NoGC>::NAMED_LAMBDA:
+              case StaticScopeIter<NoGC>::Block:
+                MOZ_ASSERT(&i.block() == scope->as<ClonedBlockObject>().staticScope());
+                scope = &scope->as<ClonedBlockObject>().enclosingScope();
+                break;
+              case StaticScopeIter<NoGC>::With:
+                MOZ_ASSERT(&i.staticWith() == scope->as<DynamicWithObject>().staticScope());
+                scope = &scope->as<DynamicWithObject>().enclosingScope();
+                break;
+              case StaticScopeIter<NoGC>::NamedLambda:
                 scope = &scope->as<DeclEnvObject>().enclosingScope();
+                break;
+              case StaticScopeIter<NoGC>::Eval:
+                scope = &scope->as<CallObject>().enclosingScope();
                 break;
             }
         }
     }
 
-    /*
-     * Ideally, we'd MOZ_ASSERT(!scope->is<ScopeObject>()) but the enclosing
-     * lexical scope chain stops at eval() boundaries. See StaticScopeIter
-     * comment.
-     */
+    // The scope chain is always ended by one or more non-syntactic
+    // ScopeObjects (viz. GlobalObject or a non-syntactic WithObject).
+    MOZ_ASSERT(!scope->is<ScopeObject>() ||
+               (scope->is<DynamicWithObject>() &&
+                !scope->as<DynamicWithObject>().isSyntactic()));
 #endif
 }
 
@@ -352,7 +355,7 @@ InterpreterFrame::markValues(JSTracer *trc, Value *sp, jsbytecode *pc)
     size_t nlivefixed = script->nbodyfixed();
 
     if (nfixed != nlivefixed) {
-        NestedScopeObject *staticScope = script->getStaticScope(pc);
+        NestedScopeObject *staticScope = script->getStaticBlockScope(pc);
         while (staticScope && !staticScope->is<StaticBlockObject>())
             staticScope = staticScope->enclosingNestedScope();
 
@@ -553,12 +556,6 @@ FrameIter::settleOnActivation()
 
             data_.state_ = ASMJS;
             return;
-        }
-
-        // ForkJoin activations don't contain iterable frames, so skip them.
-        if (activation->isForkJoin()) {
-            ++data_.activations_;
-            continue;
         }
 
         MOZ_ASSERT(activation->isInterpreter());
@@ -1477,8 +1474,6 @@ jit::JitActivation::clearRematerializedFrames()
 jit::RematerializedFrame *
 jit::JitActivation::getRematerializedFrame(JSContext *cx, const JitFrameIterator &iter, size_t inlineDepth)
 {
-    // Only allow rematerializing from the same thread.
-    MOZ_ASSERT(cx->perThreadData == cx_->perThreadData);
     MOZ_ASSERT(iter.activation() == this);
     MOZ_ASSERT(iter.isIonScripted());
 
@@ -1503,8 +1498,22 @@ jit::JitActivation::getRematerializedFrame(JSContext *cx, const JitFrameIterator
         // preserve identity. Therefore, we always rematerialize an uninlined
         // frame and all its inlined frames at once.
         InlineFrameIterator inlineIter(cx, &iter);
-        if (!RematerializedFrame::RematerializeInlineFrames(cx, top, inlineIter, p->value()))
+        MaybeReadFallback recover(cx, this, &iter);
+
+        // Frames are often rematerialized with the cx inside a Debugger's
+        // compartment. To recover slots and to create CallObjects, we need to
+        // be in the activation's compartment.
+        AutoCompartment ac(cx, compartment_);
+
+        if (!RematerializedFrame::RematerializeInlineFrames(cx, top, inlineIter, recover,
+                                                            p->value()))
+        {
             return nullptr;
+        }
+
+        // All frames younger than the rematerialized frame need to have their
+        // prevUpToDate flag cleared.
+        DebugScopes::unsetPrevUpToDateUntil(cx, p->value()[inlineDepth]);
     }
 
     return p->value()[inlineDepth];

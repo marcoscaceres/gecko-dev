@@ -288,7 +288,8 @@ nsXMLHttpRequest::sDontWarnAboutSyncXHR = false;
 nsXMLHttpRequest::nsXMLHttpRequest()
   : mResponseBodyDecodedPos(0),
     mResponseType(XML_HTTP_RESPONSE_TYPE_DEFAULT),
-    mRequestObserver(nullptr), mState(XML_HTTP_REQUEST_UNSENT),
+    mRequestObserver(nullptr),
+    mState(XML_HTTP_REQUEST_UNSENT | XML_HTTP_REQUEST_ASYNC),
     mUploadTransferred(0), mUploadTotal(0), mUploadComplete(true),
     mProgressSinceLastProgressEvent(false),
     mRequestSentTime(0), mTimeoutMilliseconds(0),
@@ -301,7 +302,7 @@ nsXMLHttpRequest::nsXMLHttpRequest()
     mIsAnon(false),
     mFirstStartRequestSeen(false),
     mInLoadProgressEvent(false),
-    mResultJSON(JSVAL_VOID),
+    mResultJSON(JS::UndefinedValue()),
     mResultArrayBuffer(nullptr),
     mIsMappedArrayBuffer(false),
     mXPCOMifier(nullptr)
@@ -323,7 +324,7 @@ nsXMLHttpRequest::~nsXMLHttpRequest()
   NS_ABORT_IF_FALSE(!(mState & XML_HTTP_REQUEST_SYNCLOOPING), "we rather crash than hang");
   mState &= ~XML_HTTP_REQUEST_SYNCLOOPING;
 
-  mResultJSON = JSVAL_VOID;
+  mResultJSON.setUndefined();
   mResultArrayBuffer = nullptr;
   mozilla::DropJSObjects(this);
 }
@@ -428,7 +429,7 @@ nsXMLHttpRequest::ResetResponse()
   mBlobSet = nullptr;
   mResultArrayBuffer = nullptr;
   mArrayBufferBuilder.reset();
-  mResultJSON = JSVAL_VOID;
+  mResultJSON.setUndefined();
   mDataAvailable = 0;
   mLoadTransferred = 0;
   mResponseBodyDecodedPos = 0;
@@ -488,7 +489,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(nsXMLHttpRequest,
                                                 nsXHREventTarget)
   tmp->mResultArrayBuffer = nullptr;
   tmp->mArrayBufferBuilder.reset();
-  tmp->mResultJSON = JSVAL_VOID;
+  tmp->mResultJSON.setUndefined();
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mContext)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mChannel)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mResponseXML)
@@ -915,10 +916,9 @@ void
 nsXMLHttpRequest::SetResponseType(nsXMLHttpRequest::ResponseTypeEnum aResponseType,
                                   ErrorResult& aRv)
 {
-  // If the state is not OPENED or HEADERS_RECEIVED raise an
-  // INVALID_STATE_ERR exception and terminate these steps.
-  if (!(mState & (XML_HTTP_REQUEST_OPENED | XML_HTTP_REQUEST_SENT |
-                  XML_HTTP_REQUEST_HEADERS_RECEIVED))) {
+  // If the state is LOADING or DONE raise an INVALID_STATE_ERR exception
+  // and terminate these steps.
+  if ((mState & (XML_HTTP_REQUEST_LOADING | XML_HTTP_REQUEST_DONE))) {
     aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
     return;
   }

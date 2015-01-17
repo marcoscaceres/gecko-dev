@@ -89,7 +89,8 @@ FrameAnimator::AdvanceFrame(TimeStamp aTime)
   // If we're done decoding, we know we've got everything we're going to get.
   // If we aren't, we only display fully-downloaded frames; everything else
   // gets delayed.
-  bool canDisplay = mDoneDecoding || (nextFrame && nextFrame->ImageComplete());
+  bool canDisplay = mDoneDecoding ||
+                    (nextFrame && nextFrame->IsImageComplete());
 
   if (!canDisplay) {
     // Uh oh, the frame we want to show is currently being decoded (partial)
@@ -289,6 +290,11 @@ int32_t
 FrameAnimator::GetTimeoutForFrame(uint32_t aFrameNum) const
 {
   RawAccessFrameRef frame = GetRawFrame(aFrameNum);
+  if (!frame) {
+    NS_WARNING("No frame; called GetTimeoutForFrame too early?");
+    return 100;
+  }
+
   AnimationData data = frame->GetAnimationData();
 
   // Ensure a minimal time between updates so we don't throttle the UI thread.
@@ -595,6 +601,8 @@ FrameAnimator::DoBlend(nsIntRect* aDirtyRect,
                    compositingFrameData.mRect,
                    compositingPrevFrameData.mRawData,
                    compositingPrevFrameData.mRect);
+
+    mCompositingPrevFrame->Finish();
   }
 
   // blit next frame into it's correct spot
@@ -606,11 +614,7 @@ FrameAnimator::DoBlend(nsIntRect* aDirtyRect,
               nextFrameData.mBlendMethod);
 
   // Tell the image that it is fully 'downloaded'.
-  nsresult rv =
-    mCompositingFrame->ImageUpdated(compositingFrameData.mRect);
-  if (NS_FAILED(rv)) {
-    return false;
-  }
+  mCompositingFrame->Finish();
 
   mLastCompositedFrameIndex = int32_t(aNextFrameIndex);
 

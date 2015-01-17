@@ -52,6 +52,7 @@ class NestedScopeObject;
 
 namespace frontend {
     struct BytecodeEmitter;
+    class UpvarCookie;
 }
 
 }
@@ -285,7 +286,7 @@ class Bindings
     uint32_t numUnaliasedBodyLevelLocals() const { return numUnaliasedVars_ + numUnaliasedBodyLevelLexicals_; }
     uint32_t numAliasedBodyLevelLocals() const { return numBodyLevelLocals() - numUnaliasedBodyLevelLocals(); }
     uint32_t numLocals() const { return numVars() + numBodyLevelLexicals() + numBlockScoped(); }
-    uint32_t numUnaliasedLocals() const { return numUnaliasedVars() + numUnaliasedBodyLevelLexicals() + numBlockScoped(); }
+    uint32_t numFixedLocals() const { return numUnaliasedVars() + numUnaliasedBodyLevelLexicals() + numBlockScoped(); }
     uint32_t lexicalBegin() const { return numArgs() + numVars(); }
     uint32_t aliasedBodyLevelLexicalBegin() const { return aliasedBodyLevelLexicalBegin_; }
 
@@ -299,8 +300,7 @@ class Bindings
     Shape *callObjShape() const { return callObjShape_; }
 
     /* Convenience method to get the var index of 'arguments'. */
-    static uint32_t argumentsVarIndex(ExclusiveContext *cx, InternalBindingsHandle,
-                                      uint32_t *unaliasedSlot = nullptr);
+    static BindingIter argumentsBinding(ExclusiveContext *cx, InternalBindingsHandle);
 
     /* Return whether the binding at bindingIndex is aliased. */
     bool bindingIsAliased(uint32_t bindingIndex);
@@ -841,9 +841,6 @@ class JSScript : public js::gc::TenuredCell
     js::jit::IonScript *ion;
     js::jit::BaselineScript *baseline;
 
-    /* Information attached by Ion for parallel mode execution */
-    js::jit::IonScript *parallelIon;
-
     /* Information used to re-lazify a lazily-parsed interpreted function. */
     js::LazyScript *lazyScript;
 
@@ -972,6 +969,7 @@ class JSScript : public js::gc::TenuredCell
     // 'this', 'arguments' and f.apply() are used. This is likely to be a wrapper.
     bool usesArgumentsApplyAndThis_:1;
 
+    // PJS FIXME bug 1121433 - clone at call site may be obsolete
     /* script is attempted to be cloned anew at each callsite. This is
        temporarily needed for ParallelArray selfhosted code until type
        information can be made context sensitive. See discussion in
@@ -1013,6 +1011,13 @@ class JSScript : public js::gc::TenuredCell
     // This should be a uint32 but is instead a bool so that MSVC packs it
     // correctly.
     bool typesGeneration_:1;
+
+    // Add padding so JSScript is gc::Cell aligned. Make padding protected
+    // instead of private to suppress -Wunused-private-field compiler warnings.
+  protected:
+#if JS_BITS_PER_WORD == 32
+    uint32_t padding;
+#endif
 
     //
     // End of fields.  Start methods.
@@ -1090,7 +1095,7 @@ class JSScript : public js::gc::TenuredCell
     // The fixed part of a stack frame is comprised of vars (in function code)
     // and block-scoped locals (in all kinds of code).
     size_t nfixed() const {
-        return function_ ? bindings.numUnaliasedLocals() : bindings.numBlockScoped();
+        return function_ ? bindings.numFixedLocals() : bindings.numBlockScoped();
     }
 
     // Number of fixed slots reserved for vars.  Only nonzero for function
@@ -1312,7 +1317,7 @@ class JSScript : public js::gc::TenuredCell
     }
 
     bool hasAnyIonScript() const {
-        return hasIonScript() || hasParallelIonScript();
+        return hasIonScript();
     }
 
     bool hasIonScript() const {
@@ -1372,39 +1377,11 @@ class JSScript : public js::gc::TenuredCell
         return ion->pendingBuilder();
     }
 
-    bool hasParallelIonScript() const {
-        return parallelIon && parallelIon != ION_DISABLED_SCRIPT && parallelIon != ION_COMPILING_SCRIPT;
-    }
-
-    bool canParallelIonCompile() const {
-        return parallelIon != ION_DISABLED_SCRIPT;
-    }
-
-    bool isParallelIonCompilingOffThread() const {
-        return parallelIon == ION_COMPILING_SCRIPT;
-    }
-
-    js::jit::IonScript *parallelIonScript() const {
-        MOZ_ASSERT(hasParallelIonScript());
-        return parallelIon;
-    }
-    js::jit::IonScript *maybeParallelIonScript() const {
-        return parallelIon;
-    }
-    void setParallelIonScript(js::jit::IonScript *ionScript) {
-        if (hasParallelIonScript())
-            js::jit::IonScript::writeBarrierPre(zone(), parallelIon);
-        parallelIon = ionScript;
-    }
-
     static size_t offsetOfBaselineScript() {
         return offsetof(JSScript, baseline);
     }
     static size_t offsetOfIonScript() {
         return offsetof(JSScript, ion);
-    }
-    static size_t offsetOfParallelIonScript() {
-        return offsetof(JSScript, parallelIon);
     }
     static size_t offsetOfBaselineOrIonRaw() {
         return offsetof(JSScript, baselineOrIonRaw);
@@ -1643,7 +1620,15 @@ class JSScript : public js::gc::TenuredCell
         return arr->vector[index];
     }
 
-    js::NestedScopeObject *getStaticScope(jsbytecode *pc);
+    js::NestedScopeObject *getStaticBlockScope(jsbytecode *pc);
+
+    // Returns the innermost static scope at pc if it falls within the extent
+    // of the script. Returns nullptr otherwise.
+    JSObject *innermostStaticScopeInScript(jsbytecode *pc);
+
+    // As innermostStaticScopeInScript, but returns the enclosing static scope
+    // if the innermost static scope falls without the extent of the script.
+    JSObject *innermostStaticScope(jsbytecode *pc);
 
     /*
      * The isEmpty method tells whether this script has code that computes any
@@ -1660,10 +1645,12 @@ class JSScript : public js::gc::TenuredCell
         return JSOp(*pc) == JSOP_RETRVAL;
     }
 
-    bool varIsAliased(uint32_t varSlot);
-    bool bodyLevelLocalIsAliased(uint32_t localSlot);
+    bool bindingIsAliased(const js::BindingIter &bi);
     bool formalIsAliased(unsigned argSlot);
     bool formalLivesInArgumentsObject(unsigned argSlot);
+
+    // Frontend-only.
+    bool cookieIsAliased(const js::frontend::UpvarCookie &cookie);
 
   private:
     /* Change this->stepMode to |newValue|. */
@@ -1734,6 +1721,7 @@ class BindingIter
     uint32_t i_;
     uint32_t unaliasedLocal_;
 
+    friend class ::JSScript;
     friend class Bindings;
 
   public:

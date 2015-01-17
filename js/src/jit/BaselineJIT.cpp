@@ -270,18 +270,8 @@ CanEnterBaselineJIT(JSContext *cx, HandleScript script, InterpreterFrame *osrFra
         return Method_Compiled;
 
     // Check script warm-up counter.
-    //
-    // Also eagerly compile if we are in parallel warmup, the point of which
-    // is to gather type information so that the script may be compiled for
-    // parallel execution. We want to avoid the situation of OSRing during
-    // warm-up and only gathering type information for the loop, and not the
-    // rest of the function.
-    if (cx->runtime()->forkJoinWarmup > 0) {
-        if (osrFrame)
-            return Method_Skipped;
-    } else if (script->incWarmUpCounter() <= js_JitOptions.baselineWarmUpThreshold) {
+    if (script->incWarmUpCounter() <= js_JitOptions.baselineWarmUpThreshold)
         return Method_Skipped;
-    }
 
     if (script->isCallsiteClone()) {
         // Ensure the original function is compiled too, so that bailouts from
@@ -526,8 +516,8 @@ BaselineScript::pcMappingReader(size_t indexEntry)
     return CompactBufferReader(dataStart, dataEnd);
 }
 
-ICEntry *
-BaselineScript::maybeICEntryFromReturnOffset(CodeOffsetLabel returnOffset)
+ICEntry &
+BaselineScript::icEntryFromReturnOffset(CodeOffsetLabel returnOffset)
 {
     size_t bottom = 0;
     size_t top = numICEntries();
@@ -536,25 +526,15 @@ BaselineScript::maybeICEntryFromReturnOffset(CodeOffsetLabel returnOffset)
         ICEntry &midEntry = icEntry(mid);
         if (midEntry.returnOffset().offset() < returnOffset.offset())
             bottom = mid + 1;
-        else // if (midEntry.returnOffset().offset() >= returnOffset.offset())
+        else
             top = mid;
         mid = bottom + (top - bottom) / 2;
     }
-    if (mid >= numICEntries())
-        return nullptr;
 
-    if (icEntry(mid).returnOffset().offset() != returnOffset.offset())
-        return nullptr;
+    MOZ_ASSERT(mid < numICEntries());
+    MOZ_ASSERT(icEntry(mid).returnOffset().offset() == returnOffset.offset());
 
-    return &icEntry(mid);
-}
-
-ICEntry &
-BaselineScript::icEntryFromReturnOffset(CodeOffsetLabel returnOffset)
-{
-    ICEntry *result = maybeICEntryFromReturnOffset(returnOffset);
-    MOZ_ASSERT(result);
-    return *result;
+    return icEntry(mid);
 }
 
 uint8_t *
@@ -644,15 +624,6 @@ BaselineScript::callVMEntryFromPCOffset(uint32_t pcOffset)
     MOZ_CRASH("Invalid PC offset for callVM entry.");
 }
 
-ICEntry *
-BaselineScript::maybeICEntryFromReturnAddress(uint8_t *returnAddr)
-{
-    MOZ_ASSERT(returnAddr > method_->raw());
-    MOZ_ASSERT(returnAddr < method_->raw() + method_->instructionsSize());
-    CodeOffsetLabel offset(returnAddr - method_->raw());
-    return maybeICEntryFromReturnOffset(offset);
-}
-
 ICEntry &
 BaselineScript::icEntryFromReturnAddress(uint8_t *returnAddr)
 {
@@ -728,7 +699,7 @@ BaselineScript::copyPCMappingIndexEntries(const PCMappingIndexEntry *entries)
 }
 
 uint8_t *
-BaselineScript::maybeNativeCodeForPC(JSScript *script, jsbytecode *pc, PCMappingSlotInfo *slotInfo)
+BaselineScript::nativeCodeForPC(JSScript *script, jsbytecode *pc, PCMappingSlotInfo *slotInfo)
 {
     MOZ_ASSERT_IF(script->hasBaselineScript(), script->baselineScript() == this);
 
@@ -772,34 +743,17 @@ BaselineScript::maybeNativeCodeForPC(JSScript *script, jsbytecode *pc, PCMapping
         curPC += GetBytecodeLength(curPC);
     }
 
-    return nullptr;
+    MOZ_CRASH("No native code for this pc");
 }
 
 jsbytecode *
-BaselineScript::pcForReturnOffset(JSScript *script, uint32_t nativeOffset)
-{
-    return pcForNativeOffset(script, nativeOffset, true);
-}
-
-jsbytecode *
-BaselineScript::pcForReturnAddress(JSScript *script, uint8_t *nativeAddress)
+BaselineScript::approximatePcForNativeAddress(JSScript *script, uint8_t *nativeAddress)
 {
     MOZ_ASSERT(script->baselineScript() == this);
     MOZ_ASSERT(nativeAddress >= method_->raw());
     MOZ_ASSERT(nativeAddress < method_->raw() + method_->instructionsSize());
-    return pcForReturnOffset(script, uint32_t(nativeAddress - method_->raw()));
-}
 
-jsbytecode *
-BaselineScript::pcForNativeOffset(JSScript *script, uint32_t nativeOffset)
-{
-    return pcForNativeOffset(script, nativeOffset, false);
-}
-
-jsbytecode *
-BaselineScript::pcForNativeOffset(JSScript *script, uint32_t nativeOffset, bool isReturn)
-{
-    MOZ_ASSERT(script->baselineScript() == this);
+    uint32_t nativeOffset = nativeAddress - method_->raw();
     MOZ_ASSERT(nativeOffset < method_->instructionsSize());
 
     // Look for the first PCMappingIndexEntry with native offset > the native offset we are
@@ -815,21 +769,18 @@ BaselineScript::pcForNativeOffset(JSScript *script, uint32_t nativeOffset, bool 
     i--;
 
     PCMappingIndexEntry &entry = pcMappingIndexEntry(i);
-    MOZ_ASSERT_IF(isReturn, nativeOffset >= entry.nativeOffset);
 
     CompactBufferReader reader(pcMappingReader(i));
     jsbytecode *curPC = script->offsetToPC(entry.pcOffset);
     uint32_t curNativeOffset = entry.nativeOffset;
 
     MOZ_ASSERT(script->containsPC(curPC));
-    MOZ_ASSERT_IF(isReturn, nativeOffset >= curNativeOffset);
 
-    // In the raw native-lookup case, the native code address can occur
-    // before the start of ops.  Associate those with bytecode offset 0.
-    if (!isReturn && (curNativeOffset > nativeOffset))
+    // The native code address can occur before the start of ops.
+    // Associate those with bytecode offset 0.
+    if (curNativeOffset > nativeOffset)
         return script->code();
 
-    mozilla::DebugOnly<uint32_t> lastNativeOffset = curNativeOffset;
     jsbytecode *lastPC = curPC;
     while (true) {
         // If the high bit is set, the native offset relative to the
@@ -841,36 +792,18 @@ BaselineScript::pcForNativeOffset(JSScript *script, uint32_t nativeOffset, bool 
         // Return the last PC that matched nativeOffset. Some bytecode
         // generate no native code (e.g., constant-pushing bytecode like
         // JSOP_INT8), and so their entries share the same nativeOffset as the
-        // next op that does generate code. Trying to find an entry for a
-        // return address is impossible for bytecodes that generate no code
-        // since calling this method requires VM reentry, so assert an exact
-        // match.
-        if (curNativeOffset > nativeOffset) {
-            MOZ_ASSERT_IF(isReturn, lastNativeOffset == nativeOffset);
+        // next op that does generate code.
+        if (curNativeOffset > nativeOffset)
             return lastPC;
-        }
 
-        // If this is a raw native lookup (not jsop return addresses), then
-        // the native address may lie in-between the last delta-entry in
+        // The native address may lie in-between the last delta-entry in
         // a pcMappingIndexEntry, and the next pcMappingIndexEntry.
-        if (!reader.more()) {
-            MOZ_ASSERT_IF(isReturn, curNativeOffset == nativeOffset);
+        if (!reader.more())
             return curPC;
-        }
 
-        lastNativeOffset = curNativeOffset;
         lastPC = curPC;
         curPC += GetBytecodeLength(curPC);
     }
-}
-
-jsbytecode *
-BaselineScript::pcForNativeAddress(JSScript *script, uint8_t *nativeAddress)
-{
-    MOZ_ASSERT(script->baselineScript() == this);
-    MOZ_ASSERT(nativeAddress >= method_->raw());
-    MOZ_ASSERT(nativeAddress < method_->raw() + method_->instructionsSize());
-    return pcForNativeOffset(script, uint32_t(nativeAddress - method_->raw()));
 }
 
 void

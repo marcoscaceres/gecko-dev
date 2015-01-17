@@ -39,7 +39,7 @@ enum class CertStatus : uint8_t {
   Unknown = der::CONTEXT_SPECIFIC | 2
 };
 
-class Context
+class Context final
 {
 public:
   Context(TrustDomain& trustDomain, const CertID& certID, Time time,
@@ -71,9 +71,8 @@ public:
   Time* validThrough;
   bool expired;
 
-private:
-  Context(const Context&); // delete
-  void operator=(const Context&); // delete
+  Context(const Context&) = delete;
+  void operator=(const Context&) = delete;
 };
 
 // Verify that potentialSigner is a valid delegated OCSP response signing cert

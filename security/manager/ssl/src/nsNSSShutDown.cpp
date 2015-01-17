@@ -33,13 +33,10 @@ ObjectSetInitEntry(PLDHashTable *table, PLDHashEntryHdr *hdr,
 }
 
 static const PLDHashTableOps gSetOps = {
-  PL_DHashAllocTable,
-  PL_DHashFreeTable,
   PL_DHashVoidPtrKeyStub,
   ObjectSetMatchEntry,
   PL_DHashMoveEntryStub,
   PL_DHashClearEntryStub,
-  PL_DHashFinalizeStub,
   ObjectSetInitEntry
 };
 
@@ -51,9 +48,8 @@ nsNSSShutDownList::nsNSSShutDownList()
   mActiveSSLSockets = 0;
   mPK11LogoutCancelObjects.ops = nullptr;
   mObjects.ops = nullptr;
-  PL_DHashTableInit(&mObjects, &gSetOps, nullptr,
-                    sizeof(ObjectHashEntry));
-  PL_DHashTableInit(&mPK11LogoutCancelObjects, &gSetOps, nullptr,
+  PL_DHashTableInit(&mObjects, &gSetOps, sizeof(ObjectHashEntry));
+  PL_DHashTableInit(&mPK11LogoutCancelObjects, &gSetOps,
                     sizeof(ObjectHashEntry));
 }
 

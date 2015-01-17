@@ -53,12 +53,16 @@ public:
   virtual size_t SizeOfVideoQueueInFrames() MOZ_OVERRIDE;
   virtual size_t SizeOfAudioQueueInFrames() MOZ_OVERRIDE;
 
+  virtual bool IsDormantNeeded() MOZ_OVERRIDE;
+  virtual void ReleaseMediaResources() MOZ_OVERRIDE;
+
   void OnAudioDecoded(AudioData* aSample);
   void OnAudioNotDecoded(NotDecodedReason aReason);
   void OnVideoDecoded(VideoData* aSample);
   void OnVideoNotDecoded(NotDecodedReason aReason);
 
-  void OnSeekCompleted();
+  void OnVideoSeekCompleted(int64_t aTime);
+  void OnAudioSeekCompleted(int64_t aTime);
   void OnSeekFailed(nsresult aResult);
 
   virtual bool IsWaitForDataSupported() MOZ_OVERRIDE { return true; }
@@ -129,18 +133,33 @@ public:
   nsresult SetCDMProxy(CDMProxy* aProxy);
 #endif
 
+  virtual bool IsAsync() const MOZ_OVERRIDE {
+    return (!mAudioReader || mAudioReader->IsAsync()) &&
+           (!mVideoReader || mVideoReader->IsAsync());
+  }
+
+  // Returns true if aReader is a currently active audio or video
+  bool IsActiveReader(MediaDecoderReader* aReader);
+
 private:
-  bool SwitchAudioReader(int64_t aTarget);
-  bool SwitchVideoReader(int64_t aTarget);
+  // Switch the current audio/video reader to the reader that
+  // contains aTarget (or up to aError after target). Both
+  // aTarget and aError are in microseconds.
+  bool SwitchAudioReader(int64_t aTarget, int64_t aError = 0);
+  bool SwitchVideoReader(int64_t aTarget, int64_t aError = 0);
+  void RequestAudioDataComplete(int64_t aTime);
+  void RequestAudioDataFailed(nsresult aResult);
+  void RequestVideoDataComplete(int64_t aTime);
+  void RequestVideoDataFailed(nsresult aResult);
 
   // Return a reader from the set available in aTrackDecoders that has data
   // available in the range requested by aTarget.
   already_AddRefed<MediaDecoderReader> SelectReader(int64_t aTarget,
+                                                    int64_t aError,
                                                     const nsTArray<nsRefPtr<SourceBufferDecoder>>& aTrackDecoders);
   bool HaveData(int64_t aTarget, MediaData::Type aType);
 
   void AttemptSeek();
-  void FinalizeSeek();
 
   nsRefPtr<MediaDecoderReader> mAudioReader;
   nsRefPtr<MediaDecoderReader> mVideoReader;
@@ -177,12 +196,6 @@ private:
   int64_t mPendingEndTime;
   int64_t mPendingCurrentTime;
   bool mWaitingForSeekData;
-
-  // Number of outstanding OnSeekCompleted notifications
-  // we're expecting to get from child decoders, and the
-  // result we're going to forward onto our callback.
-  uint32_t mPendingSeeks;
-  nsresult mSeekResult;
 
   int64_t mTimeThreshold;
   bool mDropAudioBeforeThreshold;

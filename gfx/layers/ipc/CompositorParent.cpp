@@ -481,6 +481,7 @@ CompositorParent::RecvWillStop()
       if (lts->mParent == this) {
         mLayerManager->ClearCachedResources(lts->mRoot);
         lts->mLayerManager = nullptr;
+        lts->mParent = nullptr;
       }
     }
     mLayerManager->Destroy();
@@ -1248,6 +1249,7 @@ CompositorParent* CompositorParent::RemoveCompositor(uint64_t id)
 bool
 CompositorParent::RecvNotifyChildCreated(const uint64_t& child)
 {
+  MonitorAutoLock lock(*sIndirectLayerTreesLock);
   NotifyChildCreated(child);
   return true;
 }
@@ -1255,7 +1257,7 @@ CompositorParent::RecvNotifyChildCreated(const uint64_t& child)
 void
 CompositorParent::NotifyChildCreated(const uint64_t& aChild)
 {
-  MonitorAutoLock lock(*sIndirectLayerTreesLock);
+  sIndirectLayerTreesLock->AssertCurrentThreadOwns();
   sIndirectLayerTrees[aChild].mParent = this;
   sIndirectLayerTrees[aChild].mLayerManager = mLayerManager;
 }
@@ -1263,8 +1265,8 @@ CompositorParent::NotifyChildCreated(const uint64_t& aChild)
 bool
 CompositorParent::RecvAdoptChild(const uint64_t& child)
 {
-  NotifyChildCreated(child);
   MonitorAutoLock lock(*sIndirectLayerTreesLock);
+  NotifyChildCreated(child);
   if (sIndirectLayerTrees[child].mLayerTree) {
     sIndirectLayerTrees[child].mLayerTree->mLayerManager = mLayerManager;
   }
@@ -1709,7 +1711,9 @@ CrossProcessCompositorParent::ForceComposite(LayerTransactionParent* aLayerTree)
     MonitorAutoLock lock(*sIndirectLayerTreesLock);
     parent = sIndirectLayerTrees[id].mParent;
   }
-  parent->ForceComposite(aLayerTree);
+  if (parent) {
+    parent->ForceComposite(aLayerTree);
+  }
 }
 
 bool

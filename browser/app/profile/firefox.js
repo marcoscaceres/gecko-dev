@@ -1430,7 +1430,9 @@ pref("devtools.timeline.hiddenMarkers", "[]");
 pref("devtools.performance.ui.show-timeline-memory", false);
 
 // The default Profiler UI settings
+pref("devtools.profiler.ui.flatten-tree-recursion", true);
 pref("devtools.profiler.ui.show-platform-data", false);
+pref("devtools.profiler.ui.show-idle-blocks", true);
 
 // The default cache UI setting
 pref("devtools.cache.disabled", false);
@@ -1675,7 +1677,6 @@ pref("loop.CSP", "default-src 'self' about: file: chrome:; img-src 'self' data: 
 #endif
 pref("loop.oauth.google.redirect_uri", "urn:ietf:wg:oauth:2.0:oob:auto");
 pref("loop.oauth.google.scope", "https://www.google.com/m8/feeds");
-pref("loop.rooms.enabled", true);
 pref("loop.fxa_oauth.tokendata", "");
 pref("loop.fxa_oauth.profile", "");
 pref("loop.support_url", "https://support.mozilla.org/kb/group-conversations-firefox-hello-webrtc");
@@ -1803,5 +1804,11 @@ pref("extensions.interposition.prefetching", true);
 
 pref("browser.defaultbrowser.notificationbar", false);
 
-// How many milliseconds to wait for a CPOW response from the child process.
-pref("dom.ipc.cpow.timeout", 0);
+// How often to check for CPOW timeouts. CPOWs are only timed out by
+// the hang monitor.
+pref("dom.ipc.cpow.timeout", 500);
+
+// Enable e10s hang monitoring (slow script checking and plugin hang
+// detection).
+pref("dom.ipc.processHangMonitor", true);
+pref("dom.ipc.reportProcessHangs", true);

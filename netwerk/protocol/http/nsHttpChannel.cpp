@@ -1558,6 +1558,23 @@ nsHttpChannel::ProcessResponse()
     Telemetry::Accumulate(Telemetry::HTTP_RESPONSE_VERSION,
                           mResponseHead->Version());
 
+#if defined(ANDROID) || defined(MOZ_B2G)
+    if (gHttpHandler->IsTelemetryEnabled()) {
+      // Gather telemetry on being sent a WAP content-type
+      // This check will catch (at least) the following content types:
+      // application/wml+xml, application/vnd.wap.xhtml+xml,
+      // text/vnd.wap.wml, application/vnd.wap.wmlc
+      bool isWap = false;
+      if (!mResponseHead->ContentType().IsEmpty() && (
+          mResponseHead->ContentType().Find(".wap") != -1 ||
+          mResponseHead->ContentType().Find("/wml") != -1)) {
+        isWap = true;
+      }
+
+      Telemetry::Accumulate(Telemetry::HTTP_WAP_CONTENT_TYPE_RECEIVED, isWap);
+    }
+#endif
+
     return rv;
 }
 
@@ -2019,10 +2036,10 @@ nsHttpChannel::ResolveProxy()
     // then it is ok to use that version.
     nsCOMPtr<nsIProtocolProxyService2> pps2 = do_QueryInterface(pps);
     if (pps2) {
-        rv = pps2->AsyncResolve2(mProxyURI ? mProxyURI : mURI, mProxyResolveFlags,
+        rv = pps2->AsyncResolve2(this, mProxyResolveFlags,
                                  this, getter_AddRefs(mProxyRequest));
     } else {
-        rv = pps->AsyncResolve(mProxyURI ? mProxyURI : mURI, mProxyResolveFlags,
+        rv = pps->AsyncResolve(this, mProxyResolveFlags,
                                this, getter_AddRefs(mProxyRequest));
     }
 
@@ -5055,7 +5072,7 @@ nsHttpChannel::ClearClassFlags(uint32_t inFlags)
 //-----------------------------------------------------------------------------
 
 NS_IMETHODIMP
-nsHttpChannel::OnProxyAvailable(nsICancelable *request, nsIURI *uri,
+nsHttpChannel::OnProxyAvailable(nsICancelable *request, nsIChannel *channel,
                                 nsIProxyInfo *pi, nsresult status)
 {
     LOG(("nsHttpChannel::OnProxyAvailable [this=%p pi=%p status=%x mStatus=%x]\n",

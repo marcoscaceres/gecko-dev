@@ -405,7 +405,6 @@ class CGDOMJSClass(CGThing):
                       nullptr, /* setProperty */
                       nullptr, /* setElement */
                       nullptr, /* getOwnPropertyDescriptor */
-                      nullptr, /* getGenericAttributes */
                       nullptr, /* setGenericAttributes */
                       nullptr, /* deleteGeneric */
                       nullptr, /* watch */
@@ -5702,7 +5701,7 @@ def getWrapTemplateForType(type, descriptorProvider, result, successCode,
 
             nsTArray<nsString> keys;
             ${result}.GetKeys(keys);
-            JS::Rooted<JSObject*> returnObj(cx, JS_NewObject(cx, nullptr, JS::NullPtr(), JS::NullPtr()));
+            JS::Rooted<JSObject*> returnObj(cx, JS_NewPlainObject(cx));
             if (!returnObj) {
               $*{exceptionCode}
             }
@@ -6283,6 +6282,9 @@ class CGCallGenerator(CGThing):
                 self.cgRoot.prepend(CGWrapper(result, post=";\n"))
                 if resultOutParam is None:
                     call = CGWrapper(call, pre=resultVar + " = ")
+        elif result is not None:
+            assert resultOutParam is None
+            call = CGWrapper(call, pre=resultVar + " = ")
 
         call = CGWrapper(call, post=";\n")
         self.cgRoot.append(call)
@@ -6504,8 +6506,10 @@ class CGPerSignatureCall(CGThing):
                 for i in descriptor.interface.getInheritedInterfaces())):
                 cgThings.append(CGGeneric(dedent(
                     """
-                    if (mozilla::dom::CheckSafetyInPrerendering(cx, obj)) {
-                        //TODO: Handle call into unsafe API during Prerendering (Bug 730101)
+                    if (!mozilla::dom::EnforceNotInPrerendering(cx, obj)) {
+                        // Return false from the JSNative in order to trigger
+                        // an uncatchable exception.
+                        MOZ_ASSERT(!JS_IsExceptionPending(cx));
                         return false;
                     }
                     """)))
@@ -7542,7 +7546,7 @@ class CGJsonifierMethod(CGSpecializedMethod):
 
     def definition_body(self):
         ret = dedent("""
-            JS::Rooted<JSObject*> result(cx, JS_NewObject(cx, nullptr, JS::NullPtr(), JS::NullPtr()));
+            JS::Rooted<JSObject*> result(cx, JS_NewPlainObject(cx));
             if (!result) {
               return false;
             }
@@ -8438,10 +8442,10 @@ class CGEnum(CGThing):
     def declare(self):
         decl = fill(
             """
-            MOZ_BEGIN_ENUM_CLASS(${name}, uint32_t)
+            enum class ${name} : uint32_t {
               $*{enums}
               EndGuard_
-            MOZ_END_ENUM_CLASS(${name})
+            };
             """,
             name=self.enum.identifier.name,
             enums=",\n".join(map(getEnumValueName, self.enum.values())) + ",\n")
@@ -11516,7 +11520,7 @@ class CGDictionary(CGThing):
         else:
             body += fill(
                 """
-                JS::Rooted<JSObject*> obj(cx, JS_NewObject(cx, nullptr, JS::NullPtr(), JS::NullPtr()));
+                JS::Rooted<JSObject*> obj(cx, JS_NewPlainObject(cx));
                 if (!obj) {
                   return false;
                 }

@@ -908,7 +908,7 @@ GetDisplayPortFromMarginsData(nsIContent* aContent,
   //   screen resolution; since this is what Layout does most of the time,
   //   this is a good approximation. A proper solution would involve moving the
   //   choosing of the resolution to display-list building time.
-  if (alignmentX > 0 && alignmentY > 0) {
+  if (gfxPrefs::LayersTilesEnabled() && (alignmentX > 0 && alignmentY > 0)) {
     // Inflate the rectangle by 1 so that we always push to the next tile
     // boundary. This is desirable to stop from having a rectangle with a
     // moving origin occasionally being smaller when it coincidentally lines
@@ -3239,9 +3239,8 @@ nsLayoutUtils::PaintFrame(nsRenderingContext* aRenderingContext, nsIFrame* aFram
       widget->UpdateOpaqueRegion(
         opaqueRegion.ToNearestPixels(presContext->AppUnitsPerDevPixel()));
 
-      const nsRegion& draggingRegion = builder.GetWindowDraggingRegion();
-      widget->UpdateWindowDraggingRegion(
-        draggingRegion.ToNearestPixels(presContext->AppUnitsPerDevPixel()));
+      const nsIntRegion& draggingRegion = builder.GetWindowDraggingRegion();
+      widget->UpdateWindowDraggingRegion(draggingRegion);
     }
   }
 

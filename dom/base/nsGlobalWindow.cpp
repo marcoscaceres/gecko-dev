@@ -787,6 +787,14 @@ nsOuterWindowProxy::defineProperty(JSContext* cx,
     return true;
   }
 
+  // For now, allow chrome code to define non-configurable properties
+  // on windows, until we sort out what exactly the addon SDK is
+  // doing.  In the meantime, this still allows us to test web compat
+  // behavior.
+  if (false && desc.isPermanent() && !nsContentUtils::IsCallerChrome()) {
+    return ThrowErrorMessage(cx, MSG_DEFINE_NON_CONFIGURABLE_PROP_ON_WINDOW);
+  }
+
   return js::Wrapper::defineProperty(cx, proxy, id, desc);
 }
 
@@ -4334,10 +4342,11 @@ nsGlobalWindow::GetOwnPropertyNames(JSContext* aCx, nsTArray<nsString>& aNames,
 }
 
 /* static */ bool
-nsGlobalWindow::IsChromeWindow(JSContext* aCx, JSObject* aObj)
+nsGlobalWindow::IsPrivilegedChromeWindow(JSContext* aCx, JSObject* aObj)
 {
   // For now, have to deal with XPConnect objects here.
-  return xpc::WindowOrNull(aObj)->IsChromeWindow();
+  return xpc::WindowOrNull(aObj)->IsChromeWindow() &&
+         nsContentUtils::ObjectPrincipal(aObj) == nsContentUtils::GetSystemPrincipal();
 }
 
 /* static */ bool

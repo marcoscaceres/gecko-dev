@@ -567,8 +567,6 @@ class TypedObject : public JSObject
     static bool obj_getOwnPropertyDescriptor(JSContext *cx, HandleObject obj, HandleId id,
                                              MutableHandle<JSPropertyDescriptor> desc);
 
-    static bool obj_getGenericAttributes(JSContext *cx, HandleObject obj,
-                                         HandleId id, unsigned *attrsp);
     static bool obj_setGenericAttributes(JSContext *cx, HandleObject obj,
                                          HandleId id, unsigned *attrsp);
 
@@ -729,20 +727,13 @@ class InlineTypedObject : public TypedObject
     uint8_t data_[1];
 
   public:
-    static const size_t MaximumSize =
-        sizeof(NativeObject) - sizeof(TypedObject) + NativeObject::MAX_FIXED_SLOTS * sizeof(Value);
+    static const size_t MaximumSize = JSObject::MAX_BYTE_SIZE - sizeof(TypedObject);
 
     static gc::AllocKind allocKindForTypeDescriptor(TypeDescr *descr) {
         size_t nbytes = descr->size();
         MOZ_ASSERT(nbytes <= MaximumSize);
 
-        if (nbytes <= sizeof(NativeObject) - sizeof(TypedObject))
-            return gc::FINALIZE_OBJECT0;
-        nbytes -= sizeof(NativeObject) - sizeof(TypedObject);
-
-        size_t dataSlots = AlignBytes(nbytes, sizeof(Value)) / sizeof(Value);
-        MOZ_ASSERT(nbytes <= dataSlots * sizeof(Value));
-        return gc::GetGCObjectKind(dataSlots);
+        return gc::GetGCObjectKindForBytes(nbytes + sizeof(TypedObject));
     }
 
     uint8_t *inlineTypedMem() const {

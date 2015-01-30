@@ -354,6 +354,8 @@ void MediaDecoderStateMachine::SendStreamAudio(AudioData* aAudio,
   if (offset >= aAudio->mFrames)
     return;
 
+  size_t framesToWrite = aAudio->mFrames - offset;
+
   aAudio->EnsureAudioBuffer();
   nsRefPtr<SharedBuffer> buffer = aAudio->mAudioBuffer;
   AudioDataValue* bufferData = static_cast<AudioDataValue*>(buffer->Data());
@@ -361,10 +363,11 @@ void MediaDecoderStateMachine::SendStreamAudio(AudioData* aAudio,
   for (uint32_t i = 0; i < aAudio->mChannels; ++i) {
     channels.AppendElement(bufferData + i*aAudio->mFrames + offset);
   }
-  aOutput->AppendFrames(buffer.forget(), channels, aAudio->mFrames);
-  VERBOSE_LOG("writing %d frames of data to MediaStream for AudioData at %lld",
-              aAudio->mFrames - int32_t(offset), aAudio->mTime);
-  aStream->mAudioFramesWritten += aAudio->mFrames - int32_t(offset);
+  aOutput->AppendFrames(buffer.forget(), channels, framesToWrite);
+  VERBOSE_LOG("writing %u frames of data to MediaStream for AudioData at %lld",
+              static_cast<unsigned>(framesToWrite),
+              aAudio->mTime);
+  aStream->mAudioFramesWritten += framesToWrite;
   aOutput->ApplyVolume(mVolume);
 }
 
@@ -2298,6 +2301,7 @@ MediaDecoderStateMachine::DecodeFirstFrame()
     NS_ENSURE_SUCCESS(res, res);
   } else {
     if (HasAudio()) {
+      mAudioRequestStatus = RequestStatus::Pending;
       ReentrantMonitorAutoExit unlock(mDecoder->GetReentrantMonitor());
       mReader->RequestAudioData()->Then(DecodeTaskQueue(), __func__, this,
                                         &MediaDecoderStateMachine::OnAudioDecoded,
@@ -2305,6 +2309,7 @@ MediaDecoderStateMachine::DecodeFirstFrame()
     }
     if (HasVideo()) {
       mVideoDecodeStartTime = TimeStamp::Now();
+      mVideoRequestStatus = RequestStatus::Pending;
       ReentrantMonitorAutoExit unlock(mDecoder->GetReentrantMonitor());
       mReader->RequestVideoData(false, 0)
              ->Then(DecodeTaskQueue(), __func__, this,

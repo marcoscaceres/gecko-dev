@@ -9,6 +9,7 @@
 /*
  * Double hashing, a la Knuth 6.
  */
+#include "mozilla/Attributes.h" // for MOZ_ALWAYS_INLINE
 #include "mozilla/fallible.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Types.h"
@@ -69,50 +70,29 @@ struct PLDHashTableOps;
  * Callback types are defined below and grouped into the PLDHashTableOps
  * structure, for single static initialization per hash table sub-type.
  *
- * Each hash table sub-type should nest the PLDHashEntryHdr structure at the
- * front of its particular entry type.  The keyHash member contains the result
- * of multiplying the hash code returned from the hashKey callback (see below)
- * by PL_DHASH_GOLDEN_RATIO, then constraining the result to avoid the magic 0
- * and 1 values.  The stored keyHash value is table size invariant, and it is
+ * Each hash table sub-type should make its entry type a subclass of
+ * PLDHashEntryHdr. The keyHash member contains the result of multiplying the
+ * hash code returned from the hashKey callback (see below) by
+ * PL_DHASH_GOLDEN_RATIO, then constraining the result to avoid the magic 0 and
+ * 1 values. The stored keyHash value is table size invariant, and it is
  * maintained automatically -- users should never set it, and its only uses
  * should be via the entry macros below.
- *
- * However, use PL_DHASH_ENTRY_IS_BUSY for faster liveness testing of entries
- * returned by PL_DHashTableLookup and PL_DHashTableAdd, as these functions
- * never return a non-live, busy (i.e., removed) entry pointer to its caller.
- * See below for more details on these functions.
  */
 struct PLDHashEntryHdr
 {
   PLDHashNumber keyHash;  /* every entry must begin like this */
 };
 
-MOZ_ALWAYS_INLINE bool
-PL_DHASH_ENTRY_IS_FREE(PLDHashEntryHdr* aEntry)
-{
-  return aEntry->keyHash == 0;
-}
-
-MOZ_ALWAYS_INLINE bool
-PL_DHASH_ENTRY_IS_BUSY(PLDHashEntryHdr* aEntry)
-{
-  return !PL_DHASH_ENTRY_IS_FREE(aEntry);
-}
-
 /*
- * To consolidate keyHash computation and table grow/shrink code, we use a
- * single entry point for lookup, add, and remove operations.  The operation
- * codes are declared here, along with codes returned by PLDHashEnumerator
- * functions, which control PL_DHashTableEnumerate's behavior.
+ * These are the codes returned by PLDHashEnumerator functions, which control
+ * PL_DHashTableEnumerate's behavior.
  */
-typedef enum PLDHashOperator
+enum PLDHashOperator
 {
-  PL_DHASH_LOOKUP = 0,        /* lookup entry */
-  PL_DHASH_ADD = 1,           /* add entry */
-  PL_DHASH_REMOVE = 2,        /* remove entry, or enumerator says remove */
   PL_DHASH_NEXT = 0,          /* enumerator says continue */
-  PL_DHASH_STOP = 1           /* enumerator says stop */
-} PLDHashOperator;
+  PL_DHASH_STOP = 1,          /* enumerator says stop */
+  PL_DHASH_REMOVE = 2         /* enumerator says remove */
+};
 
 /*
  * Enumerate entries in table using etor:
@@ -183,9 +163,12 @@ private:
    * |mRecursionLevel| is only used in debug builds, but is present in opt
    * builds to avoid binary compatibility problems when mixing DEBUG and
    * non-DEBUG components.  (Actually, even if it were removed,
-   * sizeof(PLDHashTable) wouldn't change, due to struct padding.)
+   * sizeof(PLDHashTable) wouldn't change, due to struct padding.) Make it
+   * protected to suppress -Wunused-private-field warnings in opt builds.
    */
+protected:
   mutable uint16_t    mRecursionLevel;/* used to detect unsafe re-entry */
+private:
   uint32_t            mEntrySize;     /* number of bytes in an entry */
   uint32_t            mEntryCount;    /* number of entries in table */
   uint32_t            mRemovedCount;  /* removed entry sentinels in table */
@@ -199,7 +182,7 @@ private:
     uint32_t        mSteps;         /* hash chain links traversed */
     uint32_t        mHits;          /* searches that found key */
     uint32_t        mMisses;        /* searches that didn't find key */
-    uint32_t        mLookups;       /* number of PL_DHASH_LOOKUPs */
+    uint32_t        mSearches;      /* number of Search() calls */
     uint32_t        mAddMisses;     /* adds that miss, and do work */
     uint32_t        mAddOverRemoved;/* adds that recycled a removed entry */
     uint32_t        mAddHits;       /* adds that hit an existing entry */
@@ -258,7 +241,7 @@ public:
 
   void Finish();
 
-  PLDHashEntryHdr* Lookup(const void* aKey);
+  PLDHashEntryHdr* Search(const void* aKey);
   PLDHashEntryHdr* Add(const void* aKey);
   void Remove(const void* aKey);
 
@@ -310,12 +293,12 @@ public:
   Iterator Iterate() const { return Iterator(this); }
 
 private:
+  PLDHashNumber GetKeyHash(const void* aKey);
+
   PLDHashEntryHdr* PL_DHASH_FASTCALL
-    SearchTable(const void* aKey, PLDHashNumber aKeyHash, PLDHashOperator aOp);
+    SearchTable(const void* aKey, PLDHashNumber aKeyHash, bool aIsAdd);
 
   PLDHashEntryHdr* PL_DHASH_FASTCALL FindFreeEntry(PLDHashNumber aKeyHash);
-
-  PLDHashEntryHdr* Operate(const void* aKey, PLDHashOperator aOp);
 
   bool ChangeTable(int aDeltaLog2);
 };
@@ -347,8 +330,8 @@ typedef void (*PLDHashMoveEntry)(PLDHashTable* aTable,
 
 /*
  * Clear the entry and drop any strong references it holds.  This callback is
- * invoked during a PL_DHASH_REMOVE operation (see below for operation codes),
- * but only if the given key is found in the table.
+ * invoked by PL_DHashTableRemove(), but only if the given key is found in the
+ * table.
  */
 typedef void (*PLDHashClearEntry)(PLDHashTable* aTable,
                                   PLDHashEntryHdr* aEntry);
@@ -480,28 +463,28 @@ MOZ_WARN_UNUSED_RESULT bool PL_DHashTableInit(
 void PL_DHashTableFinish(PLDHashTable* aTable);
 
 /*
- * To lookup a key in table, call:
+ * To search for a key in |table|, call:
  *
- *  entry = PL_DHashTableLookup(table, key);
+ *  entry = PL_DHashTableSearch(table, key);
  *
- * If PL_DHASH_ENTRY_IS_BUSY(entry) is true, key was found and it identifies
- * entry.  If PL_DHASH_ENTRY_IS_FREE(entry) is true, key was not found.
+ * If |entry| is non-null, |key| was found.  If |entry| is null, key was not
+ * found.
  */
 PLDHashEntryHdr* PL_DHASH_FASTCALL
-PL_DHashTableLookup(PLDHashTable* aTable, const void* aKey);
+PL_DHashTableSearch(PLDHashTable* aTable, const void* aKey);
 
 /*
  * To add an entry identified by key to table, call:
  *
  *  entry = PL_DHashTableAdd(table, key);
  *
- * If entry is null upon return, then either the table is severely overloaded,
- * and memory can't be allocated for entry storage. Or if
- * aTable->mOps->initEntry is non-null, the aTable->mOps->initEntry op may have
+ * If entry is null upon return, then either (a) the table is severely
+ * overloaded and memory can't be allocated for entry storage, or (b)
+ * aTable->mOps->initEntry is non-null and aTable->mOps->initEntry op has
  * returned false.
  *
- * Otherwise, aEntry->keyHash has been set so that PL_DHASH_ENTRY_IS_BUSY(entry)
- * is true, and it is up to the caller to initialize the key and value parts
+ * Otherwise, aEntry->keyHash has been set so that PL_DHASH_ENTRY_IS_FREE(entry)
+ * is false, and it is up to the caller to initialize the key and value parts
  * of the entry sub-type, if they have not been set already (i.e. if entry was
  * not already in the table, and if the optional initEntry hook was not used).
  */
@@ -521,7 +504,7 @@ void PL_DHASH_FASTCALL
 PL_DHashTableRemove(PLDHashTable* aTable, const void* aKey);
 
 /*
- * Remove an entry already accessed via LOOKUP or ADD.
+ * Remove an entry already accessed via PL_DHashTableSearch or PL_DHashTableAdd.
  *
  * NB: this is a "raw" or low-level routine, intended to be used only where
  * the inefficiency of a full PL_DHashTableRemove (which rehashes in order

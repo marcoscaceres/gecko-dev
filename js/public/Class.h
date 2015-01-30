@@ -204,9 +204,6 @@ typedef bool
 typedef bool
 (* GenericAttributesOp)(JSContext *cx, JS::HandleObject obj, JS::HandleId id, unsigned *attrsp);
 typedef bool
-(* PropertyAttributesOp)(JSContext *cx, JS::HandleObject obj, JS::Handle<PropertyName*> name,
-                         unsigned *attrsp);
-typedef bool
 (* DeleteGenericOp)(JSContext *cx, JS::HandleObject obj, JS::HandleId id, bool *succeeded);
 
 typedef bool
@@ -382,7 +379,6 @@ struct ObjectOps
     StrictPropertyIdOp  setProperty;
     StrictElementIdOp   setElement;
     GetOwnPropertyOp    getOwnPropertyDescriptor;
-    GenericAttributesOp getGenericAttributes;
     GenericAttributesOp setGenericAttributes;
     DeleteGenericOp     deleteGeneric;
     WatchOp             watch;
@@ -406,7 +402,7 @@ typedef void (*JSClassInternal)();
 struct JSClass {
     JS_CLASS_MEMBERS(JSFinalizeOp);
 
-    void                *reserved[33];
+    void                *reserved[32];
 };
 
 #define JSCLASS_HAS_PRIVATE             (1<<0)  // objects have private slot
@@ -588,7 +584,11 @@ Valueify(const JSClass *c)
 enum ESClassValue {
     ESClass_Object, ESClass_Array, ESClass_Number, ESClass_String,
     ESClass_Boolean, ESClass_RegExp, ESClass_ArrayBuffer, ESClass_SharedArrayBuffer,
-    ESClass_Date, ESClass_Set, ESClass_Map
+    ESClass_Date, ESClass_Set, ESClass_Map,
+
+    // Special snowflake for the ES6 IsArray method.
+    // Please don't use it without calling that function.
+    ESClass_IsArray
 };
 
 /*

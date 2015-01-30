@@ -5381,6 +5381,10 @@ IonBuilder::createThisScriptedSingleton(JSFunction *target, MDefinition *callee)
     if (!templateObject->hasTenuredProto() || templateObject->getProto() != proto)
         return nullptr;
 
+    types::TypeObjectKey *templateObjectType = types::TypeObjectKey::get(templateObject->type());
+    if (templateObjectType->hasFlags(constraints(), types::OBJECT_FLAG_NEW_SCRIPT_CLEARED))
+        return nullptr;
+
     types::StackTypeSet *thisTypes = types::TypeScript::ThisTypes(target->nonLazyScript());
     if (!thisTypes || !thisTypes->hasType(types::Type::ObjectType(templateObject)))
         return nullptr;
@@ -5943,6 +5947,9 @@ IonBuilder::jsop_eval(uint32_t argc)
         if (!info().funMaybeLazy())
             return abort("Direct eval in global code");
 
+        if (info().funMaybeLazy()->isArrow())
+            return abort("Direct eval from arrow function");
+
         // The 'this' value for the outer and eval scripts must be the
         // same. This is not guaranteed if a primitive string/number/etc.
         // is passed through to the eval invoke as the primitive may be
@@ -6117,7 +6124,7 @@ IonBuilder::jsop_newobject()
                                       templateObject->hasSingletonType()
                                       ? gc::TenuredHeap
                                       : templateObject->type()->initialHeap(constraints()),
-                                      /* templateObjectIsClassPrototype = */ false);
+                                      MNewObject::ObjectLiteral);
 
     current->add(ins);
     current->push(ins);
@@ -7549,7 +7556,7 @@ IonBuilder::pushReferenceLoadFromTypedObject(MDefinition *typedObj,
 
     types::TemporaryTypeSet *observedTypes = bytecodeTypes(pc);
 
-    MInstruction *load;
+    MInstruction *load = nullptr;  // initialize to silence GCC warning
     BarrierKind barrier = PropertyReadNeedsTypeBarrier(analysisContext, constraints(),
                                                        typedObj, name, observedTypes);
 
@@ -11631,7 +11638,7 @@ IonBuilder::storeReferenceTypedObjectValue(MDefinition *typedObj,
     size_t alignment = ReferenceTypeDescr::alignment(type);
     loadTypedObjectElements(typedObj, byteOffset, alignment, &elements, &scaledOffset, &adjustment);
 
-    MInstruction *store;
+    MInstruction *store = nullptr;  // initialize to silence GCC warning
     switch (type) {
       case ReferenceTypeDescr::TYPE_ANY:
         if (NeedsPostBarrier(info(), value))

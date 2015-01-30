@@ -755,6 +755,9 @@ class IonBuilder
     InliningStatus inlineRegExpExec(CallInfo &callInfo);
     InliningStatus inlineRegExpTest(CallInfo &callInfo);
 
+    // Object natives.
+    InliningStatus inlineObjectCreate(CallInfo &callInfo);
+
     // Atomics natives.
     InliningStatus inlineAtomicsCompareExchange(CallInfo &callInfo);
     InliningStatus inlineAtomicsLoad(CallInfo &callInfo);
@@ -785,7 +788,11 @@ class IonBuilder
     bool elementAccessIsTypedObjectArrayOfScalarType(MDefinition* obj, MDefinition* id,
                                                      ScalarTypeDescr::Type *arrayType);
     InliningStatus inlineConstructTypedObject(CallInfo &callInfo, TypeDescr *target);
+
+    // SIMD intrinsics and natives.
     InliningStatus inlineConstructSimdObject(CallInfo &callInfo, SimdTypeDescr *target);
+    InliningStatus inlineSimdInt32x4BinaryArith(CallInfo &callInfo, JSNative native,
+                                                MSimdBinaryArith::Operation op);
 
     // Utility intrinsics.
     InliningStatus inlineIsCallable(CallInfo &callInfo);

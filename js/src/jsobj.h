@@ -20,6 +20,7 @@
 
 #include "gc/Barrier.h"
 #include "gc/Marking.h"
+#include "js/Conversions.h"
 #include "js/GCAPI.h"
 #include "js/HeapAPI.h"
 #include "vm/Shape.h"
@@ -38,6 +39,10 @@ struct NativeIterator;
 class Nursery;
 class ObjectElements;
 struct StackShape;
+
+namespace gc {
+class RelocationOverlay;
+}
 
 inline JSObject *
 CastAsObject(PropertyOp op)
@@ -117,6 +122,7 @@ class JSObject : public js::gc::Cell
     friend class js::GCMarker;
     friend class js::NewObjectCache;
     friend class js::Nursery;
+    friend class js::gc::RelocationOverlay;
     friend bool js::PreventExtensions(JSContext *cx, JS::HandleObject obj, bool *succeeded);
     friend bool js::SetImmutablePrototype(js::ExclusiveContext *cx, JS::HandleObject obj,
                                           bool *succeeded);
@@ -421,6 +427,14 @@ class JSObject : public js::gc::Cell
     }
     static bool setNewTypeUnknown(JSContext *cx, const js::Class *clasp, JS::HandleObject obj);
 
+    // Mark an object as having its 'new' script information cleared.
+    bool wasNewScriptCleared() const {
+        return lastProperty()->hasObjectFlag(js::BaseShape::NEW_SCRIPT_CLEARED);
+    }
+    bool setNewScriptCleared(js::ExclusiveContext *cx) {
+        return setFlag(cx, js::BaseShape::NEW_SCRIPT_CLEARED);
+    }
+
     /* Set a new prototype for an object with a singleton type. */
     bool splicePrototype(JSContext *cx, const js::Class *clasp, js::Handle<js::TaggedProto> proto);
 
@@ -593,6 +607,9 @@ class JSObject : public js::gc::Cell
 
     static size_t offsetOfType() { return offsetof(JSObject, type_); }
     js::HeapPtrTypeObject *addressOfType() { return &type_; }
+
+    // Maximum size in bytes of a JSObject.
+    static const size_t MAX_BYTE_SIZE = 4 * sizeof(void *) + 16 * sizeof(JS::Value);
 
   private:
     JSObject() = delete;
@@ -945,13 +962,6 @@ extern bool
 HasOwnProperty(JSContext *cx, HandleObject obj, HandleId id, bool *result);
 
 /*
- * Deprecated. An easier-to-use version of LookupProperty that returns only the
- * property attributes.
- */
-inline bool
-GetPropertyAttributes(JSContext *cx, HandleObject obj, HandleId id, unsigned *attrsp);
-
-/*
  * Deprecated. Search the prototype chain for `obj[id]` and redefine it to have
  * the given property attributes.
  */
@@ -1156,12 +1166,12 @@ GetInitialHeap(NewObjectKind newKind, const Class *clasp)
 
 // Specialized call for constructing |this| with a known function callee,
 // and a known prototype.
-extern PlainObject *
+extern JSObject *
 CreateThisForFunctionWithProto(JSContext *cx, js::HandleObject callee, JSObject *proto,
                                NewObjectKind newKind = GenericObject);
 
 // Specialized call for constructing |this| with a known function callee.
-extern PlainObject *
+extern JSObject *
 CreateThisForFunction(JSContext *cx, js::HandleObject callee, NewObjectKind newKind);
 
 // Generic call for constructing |this|.

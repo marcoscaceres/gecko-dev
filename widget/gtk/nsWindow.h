@@ -97,6 +97,7 @@ public:
     NS_IMETHOD         Destroy(void) MOZ_OVERRIDE;
     virtual nsIWidget *GetParent() MOZ_OVERRIDE;
     virtual float      GetDPI() MOZ_OVERRIDE;
+    virtual double     GetDefaultScaleInternal() MOZ_OVERRIDE; 
     virtual nsresult   SetParent(nsIWidget* aNewParent) MOZ_OVERRIDE;
     NS_IMETHOD         SetModal(bool aModal) MOZ_OVERRIDE;
     virtual bool       IsVisible() const MOZ_OVERRIDE;
@@ -259,7 +260,6 @@ public:
     bool               DispatchKeyDownEvent(GdkEventKey *aEvent,
                                             bool *aIsCancelled);
 
-    NS_IMETHOD NotifyIME(const IMENotification& aIMENotification) MOZ_OVERRIDE;
     NS_IMETHOD_(void) SetInputContext(const InputContext& aContext,
                                       const InputContextAction& aAction) MOZ_OVERRIDE;
     NS_IMETHOD_(InputContext) GetInputContext() MOZ_OVERRIDE;
@@ -317,6 +317,10 @@ protected:
                                       GtkWidget* aNewContainer,
                                       GdkWindow* aNewParentWindow,
                                       GtkWidget* aOldContainer);
+
+    virtual nsresult NotifyIMEInternal(
+                         const IMENotification& aIMENotification) MOZ_OVERRIDE;
+
     nsCOMPtr<nsIWidget> mParent;
     // Is this a toplevel window?
     bool                mIsTopLevel;
@@ -475,6 +479,20 @@ private:
      * however, IME doesn't work at that time.
      */
     nsRefPtr<nsGtkIMModule> mIMModule;
+
+    // HiDPI scale conversion
+    gint GdkScaleFactor();
+
+    // To GDK
+    gint DevicePixelsToGdkCoordRoundUp(int pixels);
+    gint DevicePixelsToGdkCoordRoundDown(int pixels);
+    GdkPoint DevicePixelsToGdkPointRoundDown(nsIntPoint point);
+    GdkRectangle DevicePixelsToGdkRectRoundOut(nsIntRect rect);
+
+    // From GDK
+    int GdkCoordToDevicePixels(gint coord);
+    nsIntPoint GdkPointToDevicePixels(GdkPoint point);
+    nsIntRect GdkRectToDevicePixels(GdkRectangle rect);
 };
 
 class nsChildWindow : public nsWindow {

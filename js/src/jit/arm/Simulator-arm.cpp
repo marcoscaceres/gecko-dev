@@ -1450,6 +1450,15 @@ Simulator::getFpArgs(double *x, double *y, int32_t *z)
 }
 
 void
+Simulator::getFpFromStack(int32_t *stack, double *x)
+{
+    MOZ_ASSERT(stack && x);
+    char buffer[2 * sizeof(stack[0])];
+    memcpy(buffer, stack, 2 * sizeof(stack[0]));
+    memcpy(x, buffer, 2 * sizeof(stack[0]));
+}
+
+void
 Simulator::setCallResultDouble(double result)
 {
     // The return value is either in r0/r1 or d0.
@@ -2078,6 +2087,9 @@ typedef double (*Prototype_Double_IntDouble)(int32_t arg0, double arg1);
 typedef double (*Prototype_Double_DoubleDouble)(double arg0, double arg1);
 typedef int32_t (*Prototype_Int_IntDouble)(int32_t arg0, double arg1);
 
+typedef double (*Prototype_Double_DoubleDoubleDouble)(double arg0, double arg1, double arg2);
+typedef double (*Prototype_Double_DoubleDoubleDoubleDouble)(double arg0, double arg1,
+                                                            double arg2, double arg3);
 
 // Fill the volatile registers with scratch values.
 //
@@ -2297,6 +2309,31 @@ Simulator::softwareInterrupt(SimInstruction *instr)
             int32_t result = target(ival, dval0);
             scratchVolatileRegisters(/* scratchFloat = true */);
             set_register(r0, result);
+            break;
+          }
+          case Args_Double_DoubleDoubleDouble: {
+            double dval0, dval1, dval2;
+            int32_t ival;
+            getFpArgs(&dval0, &dval1, &ival);
+            // the last argument is on stack
+            getFpFromStack(stack_pointer, &dval2);
+            Prototype_Double_DoubleDoubleDouble target = reinterpret_cast<Prototype_Double_DoubleDoubleDouble>(external);
+            double dresult = target(dval0, dval1, dval2);
+            scratchVolatileRegisters(/* scratchFloat = true */);
+            setCallResultDouble(dresult);
+            break;
+         }
+         case Args_Double_DoubleDoubleDoubleDouble: {
+            double dval0, dval1, dval2, dval3;
+            int32_t ival;
+            getFpArgs(&dval0, &dval1, &ival);
+            // the two last arguments are on stack
+            getFpFromStack(stack_pointer, &dval2);
+            getFpFromStack(stack_pointer + 2, &dval3);
+            Prototype_Double_DoubleDoubleDoubleDouble target = reinterpret_cast<Prototype_Double_DoubleDoubleDoubleDouble>(external);
+            double dresult = target(dval0, dval1, dval2, dval3);
+            scratchVolatileRegisters(/* scratchFloat = true */);
+            setCallResultDouble(dresult);
             break;
           }
           default:
@@ -4226,7 +4263,7 @@ Simulator::execute()
             int32_t rpc = resume_pc_;
             if (MOZ_UNLIKELY(rpc != 0)) {
                 // AsmJS signal handler ran and we have to adjust the pc.
-                PerThreadData::innermostAsmJSActivation()->setResumePC((void *)get_pc());
+                JSRuntime::innermostAsmJSActivation()->setResumePC((void *)get_pc());
                 set_pc(rpc);
                 resume_pc_ = 0;
             }
@@ -4418,28 +4455,40 @@ Simulator::Current()
 } // namespace js
 
 js::jit::Simulator *
-js::PerThreadData::simulator() const
+JSRuntime::simulator() const
 {
     return simulator_;
+}
+
+js::jit::Simulator *
+js::PerThreadData::simulator() const
+{
+    return runtime_->simulator();
+}
+
+void
+JSRuntime::setSimulator(js::jit::Simulator *sim)
+{
+    simulator_ = sim;
+    simulatorStackLimit_ = sim->stackLimit();
 }
 
 void
 js::PerThreadData::setSimulator(js::jit::Simulator *sim)
 {
-    simulator_ = sim;
-    simulatorStackLimit_ = sim->stackLimit();
+    runtime_->setSimulator(sim);
+}
+
+uintptr_t *
+JSRuntime::addressOfSimulatorStackLimit()
+{
+    return &simulatorStackLimit_;
 }
 
 js::jit::SimulatorRuntime *
 js::PerThreadData::simulatorRuntime() const
 {
     return runtime_->simulatorRuntime();
-}
-
-uintptr_t *
-js::PerThreadData::addressOfSimulatorStackLimit()
-{
-    return &simulatorStackLimit_;
 }
 
 js::jit::SimulatorRuntime *

@@ -102,14 +102,16 @@ interface nsINfcRequestCallback : nsISupports
   void notifyError(in DOMString errorMsg);
 };
 
-[scriptable, uuid(7ae46728-bc42-44bd-8093-bc7563abf52d)]
+[scriptable, uuid(7ae94107-adc9-4467-ae44-72f9a91f3ee8)]
 interface nsINfcBrowserAPI : nsISupports
 {
+  const int32_t SYSTEM_APP_ID = -1;
+
   void setFocusApp(in uint64_t tabId,
                    in boolean isFocus);
 };
 
-[scriptable, uuid(b5194ae8-d5d5-482f-a73f-dd0d755a1972)]
+[scriptable, uuid(b35f4bf5-e1b8-45f4-b5d3-2ae9b6d5871e)]
 interface nsINfcContentHelper : nsISupports
 {
   void init(in nsIDOMWindow window);
@@ -276,4 +278,19 @@ interface nsINfcContentHelper : nsISupports
    */
   void changeRFState(in DOMString rfState,
                      in nsINfcRequestCallback callback);
+
+  /**
+   * Notify parent process to call the default tagfound or peerfound event
+   * handler.
+   *
+   * @param sessionToken
+   *        Session token of this event.
+   * @param isP2P
+   *        Is this a P2P Session.
+   * @param records
+   *        NDEF Records.
+   */
+  void callDefaultFoundHandler(in DOMString sessionToken,
+                               in boolean isP2P,
+                               in nsIVariant records);
 };

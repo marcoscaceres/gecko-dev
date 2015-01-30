@@ -127,16 +127,10 @@ public abstract class GeckoApp
     SensorEventListener,
     Tabs.OnTabsChangedListener {
 
-    protected GeckoApp() {
-        // We need to do this before any access to the profile; it controls
-        // which database class is used.
-        // We thus need to do this before our GeckoView is inflated, because
-        // GeckoView implicitly accesses the profile.
-        GeckoProfile.setBrowserDBFactory(getBrowserDBFactory());
-    }
-
     private static final String LOGTAG = "GeckoApp";
     private static final int ONE_DAY_MS = 1000*60*60*24;
+
+    private static final boolean ZOOMED_VIEW_ENABLED = AppConstants.NIGHTLY_BUILD;
 
     private static enum StartupAction {
         NORMAL,     /* normal application start */
@@ -181,6 +175,7 @@ public abstract class GeckoApp
     private ContactService mContactService;
     private PromptService mPromptService;
     private TextSelection mTextSelection;
+    private ZoomedView mZoomedView;
 
     protected DoorHangerPopup mDoorHangerPopup;
     protected FormAssistPopup mFormAssistPopup;
@@ -237,8 +232,6 @@ public abstract class GeckoApp
     public SharedPreferences getSharedPreferences() {
         return GeckoSharedPrefs.forApp(this);
     }
-
-    protected abstract BrowserDB.Factory getBrowserDBFactory();
 
     @Override
     public Activity getActivity() {
@@ -1588,6 +1581,11 @@ public abstract class GeckoApp
                                            (TextSelectionHandle) findViewById(R.id.caret_handle),
                                            (TextSelectionHandle) findViewById(R.id.focus_handle));
 
+        if (ZOOMED_VIEW_ENABLED) {
+            ViewStub stub = (ViewStub) findViewById(R.id.zoomed_view_stub);
+            mZoomedView = (ZoomedView) stub.inflate();
+        }
+
         PrefsHelper.getPref("app.update.autodownload", new PrefsHelper.PrefHandlerBase() {
             @Override public void prefValue(String pref, String value) {
                 UpdateServiceHelper.registerForUpdates(GeckoApp.this, value);
@@ -2058,6 +2056,9 @@ public abstract class GeckoApp
             mPromptService.destroy();
         if (mTextSelection != null)
             mTextSelection.destroy();
+        if (mZoomedView != null) {
+            mZoomedView.destroy();
+        }
         NotificationHelper.destroy();
         IntentHelper.destroy();
         GeckoNetworkManager.destroy();

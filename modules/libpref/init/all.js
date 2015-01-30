@@ -571,6 +571,12 @@ pref("apz.test.logging_enabled", false);
 pref("gfx.hidpi.enabled", 2);
 #endif
 
+#if !defined(MOZ_WIDGET_GONK) && !defined(MOZ_WIDGET_ANDROID)
+// Containerless scrolling for root frames does not yet pass tests on Android
+// or B2G.
+pref("layout.scroll.root-frame-containers", false);
+#endif
+
 // Whether to enable LayerScope tool and default listening port
 pref("gfx.layerscope.enabled", false);
 pref("gfx.layerscope.port", 23456);
@@ -792,6 +798,7 @@ pref("devtools.chrome.enabled", false);
 
 // Disable remote debugging protocol logging
 pref("devtools.debugger.log", false);
+pref("devtools.debugger.log.verbose", false);
 // Disable remote debugging connections
 #ifdef MOZ_DEV_EDITION
 pref("devtools.debugger.remote-enabled", true);
@@ -1312,6 +1319,7 @@ pref("network.http.spdy.ping-timeout", 8);
 pref("network.http.spdy.send-buffer-size", 131072);
 pref("network.http.spdy.allow-push", true);
 pref("network.http.spdy.push-allowance", 131072);
+pref("network.http.spdy.default-concurrent", 100);
 
 // alt-svc allows separation of transport routing from
 // the origin host without using a proxy.
@@ -3776,6 +3784,9 @@ pref("image.high_quality_downscaling.min_factor", 1000);
 // The maximum memory size which we'll use high-quality uspcaling on,
 // interpreted as number of decoded bytes.
 pref("image.high_quality_upscaling.max_size", 20971520);
+
+// Should we optimize away the surfaces of single-color images?
+pref("image.single-color-optimization.enabled", true);
 
 //
 // Image memory management prefs

@@ -85,7 +85,6 @@ class JitRuntime;
 class JitActivation;
 struct PcScriptCache;
 class Simulator;
-class SimulatorRuntime;
 struct AutoFlushICache;
 class CompileRuntime;
 }
@@ -288,8 +287,8 @@ class NewObjectCache
     inline bool lookupGlobal(const Class *clasp, js::GlobalObject *global, gc::AllocKind kind,
                              EntryIndex *pentry);
 
-    bool lookupType(js::types::TypeObject *type, gc::AllocKind kind, EntryIndex *pentry) {
-        return lookup(type->clasp(), type, kind, pentry);
+    bool lookupGroup(js::types::ObjectGroup *group, gc::AllocKind kind, EntryIndex *pentry) {
+        return lookup(group->clasp(), group, kind, pentry);
     }
 
     /*
@@ -307,11 +306,11 @@ class NewObjectCache
     inline void fillGlobal(EntryIndex entry, const Class *clasp, js::GlobalObject *global,
                            gc::AllocKind kind, NativeObject *obj);
 
-    void fillType(EntryIndex entry, js::types::TypeObject *type, gc::AllocKind kind,
-                  NativeObject *obj)
+    void fillGroup(EntryIndex entry, js::types::ObjectGroup *group, gc::AllocKind kind,
+                   NativeObject *obj)
     {
-        MOZ_ASSERT(obj->type() == type);
-        return fill(entry, type->clasp(), type, kind, obj);
+        MOZ_ASSERT(obj->group() == group);
+        return fill(entry, group->clasp(), group, kind, obj);
     }
 
     /* Invalidate any entries which might produce an object with shape/proto. */
@@ -348,7 +347,7 @@ class NewObjectCache
     static void copyCachedToObject(JSObject *dst, JSObject *src, gc::AllocKind kind) {
         js_memcpy(dst, src, gc::Arena::thingSize(kind));
         Shape::writeBarrierPost(dst->shape_, &dst->shape_);
-        types::TypeObject::writeBarrierPost(dst->type_, &dst->type_);
+        types::ObjectGroup::writeBarrierPost(dst->group_, &dst->group_);
     }
 };
 
@@ -562,8 +561,6 @@ class PerThreadData : public PerThreadDataFriendFields
 
 #if defined(JS_ARM_SIMULATOR) || defined(JS_MIPS_SIMULATOR)
     js::jit::Simulator *simulator() const;
-    void setSimulator(js::jit::Simulator *sim);
-    js::jit::SimulatorRuntime *simulatorRuntime() const;
 #endif
 };
 
@@ -959,8 +956,6 @@ struct JSRuntime : public JS::shadow::Runtime,
 
 #if defined(JS_ARM_SIMULATOR) || defined(JS_MIPS_SIMULATOR)
     js::jit::Simulator *simulator_;
-    uintptr_t simulatorStackLimit_;
-    js::jit::SimulatorRuntime *simulatorRuntime_;
 #endif
 
   public:
@@ -970,10 +965,7 @@ struct JSRuntime : public JS::shadow::Runtime,
 
 #if defined(JS_ARM_SIMULATOR) || defined(JS_MIPS_SIMULATOR)
     js::jit::Simulator *simulator() const;
-    void setSimulator(js::jit::Simulator *sim);
     uintptr_t *addressOfSimulatorStackLimit();
-    js::jit::SimulatorRuntime *simulatorRuntime() const;
-    void setSimulatorRuntime(js::jit::SimulatorRuntime *srt);
 #endif
 
     /* Strong references on scripts held for PCCount profiling API. */

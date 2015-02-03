@@ -191,6 +191,12 @@ static int64_t DurationToUsecs(TimeDuration aDuration) {
   return static_cast<int64_t>(aDuration.ToSeconds() * USECS_PER_S);
 }
 
+static const uint32_t MIN_VIDEO_QUEUE_SIZE = 3;
+static const uint32_t MAX_VIDEO_QUEUE_SIZE = 10;
+
+static uint32_t sVideoQueueDefaultSize = MAX_VIDEO_QUEUE_SIZE;
+static uint32_t sVideoQueueHWAccelSize = MIN_VIDEO_QUEUE_SIZE;
+
 MediaDecoderStateMachine::MediaDecoderStateMachine(MediaDecoder* aDecoder,
                                                    MediaDecoderReader* aReader,
                                                    bool aRealTime) :
@@ -216,7 +222,7 @@ MediaDecoderStateMachine::MediaDecoderStateMachine(MediaDecoder* aDecoder,
   mVolume(1.0),
   mPlaybackRate(1.0),
   mPreservesPitch(true),
-  mAmpleVideoFrames(2),
+  mAmpleVideoFrames(MIN_VIDEO_QUEUE_SIZE),
   mLowAudioThresholdUsecs(detail::LOW_AUDIO_USECS),
   mAmpleAudioThresholdUsecs(detail::AMPLE_AUDIO_USECS),
   mQuickBufferingLowDataThresholdUsecs(detail::QUICK_BUFFERING_LOW_DATA_USECS),
@@ -247,8 +253,16 @@ MediaDecoderStateMachine::MediaDecoderStateMachine(MediaDecoder* aDecoder,
   MOZ_COUNT_CTOR(MediaDecoderStateMachine);
   NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
 
-  mAmpleVideoFrames =
-    std::max<uint32_t>(Preferences::GetUint("media.video-queue.default-size", 10), 3);
+  static bool sPrefCacheInit = false;
+  if (!sPrefCacheInit) {
+    sPrefCacheInit = true;
+    Preferences::AddUintVarCache(&sVideoQueueDefaultSize,
+                                 "media.video-queue.default-size",
+                                 MAX_VIDEO_QUEUE_SIZE);
+    Preferences::AddUintVarCache(&sVideoQueueHWAccelSize,
+                                 "media.video-queue.hw-accel-size",
+                                 MIN_VIDEO_QUEUE_SIZE);
+  }
 
   mBufferingWait = IsRealTime() ? 0 : 30;
   mLowDataThresholdUsecs = IsRealTime() ? 0 : detail::LOW_DATA_THRESHOLD_USECS;
@@ -1387,11 +1401,11 @@ void MediaDecoderStateMachine::SetVolume(double volume)
   }
 }
 
-void MediaDecoderStateMachine::SetAudioCaptured(bool aCaptured)
+void MediaDecoderStateMachine::SetAudioCaptured()
 {
   NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
-  ReentrantMonitorAutoEnter mon(mDecoder->GetReentrantMonitor());
-  if (!mAudioCaptured && aCaptured && !mStopAudioThread) {
+  AssertCurrentThreadInMonitor();
+  if (!mAudioCaptured && !mStopAudioThread) {
     // Make sure the state machine runs as soon as possible. That will
     // stop the audio sink.
     // If mStopAudioThread is true then we're already stopping the audio sink
@@ -1405,7 +1419,7 @@ void MediaDecoderStateMachine::SetAudioCaptured(bool aCaptured)
       ResyncAudioClock();
     }
   }
-  mAudioCaptured = aCaptured;
+  mAudioCaptured = true;
 }
 
 double MediaDecoderStateMachine::GetCurrentTime() const
@@ -1416,6 +1430,16 @@ double MediaDecoderStateMachine::GetCurrentTime() const
                "Should be on main, decode, or state machine thread.");
 
   return static_cast<double>(mCurrentFrameTime) / static_cast<double>(USECS_PER_S);
+}
+
+int64_t MediaDecoderStateMachine::GetCurrentTimeUs() const
+{
+  NS_ASSERTION(NS_IsMainThread() ||
+               OnStateMachineThread() ||
+               OnDecodeThread(),
+               "Should be on main, decode, or state machine thread.");
+
+  return mCurrentFrameTime;
 }
 
 bool MediaDecoderStateMachine::IsRealTime() const {
@@ -1578,9 +1602,9 @@ void MediaDecoderStateMachine::StartDecoding()
 
 void MediaDecoderStateMachine::StartWaitForResources()
 {
-  NS_ASSERTION(OnStateMachineThread() || OnDecodeThread(),
-               "Should be on state machine or decode thread.");
-  AssertCurrentThreadInMonitor();
+  ReentrantMonitorAutoEnter mon(mDecoder->GetReentrantMonitor());
+  NS_ASSERTION(OnDecodeThread(),
+               "Should be on decode thread.");
   SetState(DECODER_STATE_WAIT_FOR_RESOURCES);
   DECODER_LOG("StartWaitForResources");
 }
@@ -1782,7 +1806,9 @@ MediaDecoderStateMachine::StartSeek(const SeekTarget& aTarget)
 
   DECODER_LOG("Changed state to SEEKING (to %lld)", mSeekTarget.mTime);
   SetState(DECODER_STATE_SEEKING);
-  mDecoder->RecreateDecodedStreamIfNecessary(seekTime - mStartTime);
+  if (mAudioCaptured) {
+    mDecoder->RecreateDecodedStream(seekTime - mStartTime);
+  }
   ScheduleStateMachine();
 }
 
@@ -1967,7 +1993,7 @@ MediaDecoderStateMachine::EnsureAudioDecodeTaskQueued()
   SAMPLE_LOG("EnsureAudioDecodeTaskQueued isDecoding=%d status=%d",
               IsAudioDecoding(), mAudioRequestStatus);
 
-  if (mState >= DECODER_STATE_COMPLETED) {
+  if (mState >= DECODER_STATE_COMPLETED || mState == DECODER_STATE_DORMANT) {
     return NS_OK;
   }
 
@@ -2012,7 +2038,7 @@ MediaDecoderStateMachine::EnsureVideoDecodeTaskQueued()
   NS_ASSERTION(OnStateMachineThread() || OnDecodeThread(),
                "Should be on state machine or decode thread.");
 
-  if (mState >= DECODER_STATE_COMPLETED) {
+  if (mState >= DECODER_STATE_COMPLETED || mState == DECODER_STATE_DORMANT) {
     return NS_OK;
   }
 
@@ -2179,28 +2205,33 @@ nsresult MediaDecoderStateMachine::DecodeMetadata()
   MOZ_ASSERT(mState == DECODER_STATE_DECODING_METADATA);
   DECODER_LOG("Decoding Media Headers");
 
-  mReader->PreReadMetadata();
+  nsresult res;
+  MediaInfo info;
+  bool isAwaitingResources = false;
+  {
+    ReentrantMonitorAutoExit exitMon(mDecoder->GetReentrantMonitor());
+    mReader->PreReadMetadata();
 
-  if (mReader->IsWaitingMediaResources()) {
+    if (mReader->IsWaitingMediaResources()) {
+      StartWaitForResources();
+      return NS_OK;
+    }
+    res = mReader->ReadMetadata(&info, getter_Transfers(mMetadataTags));
+    isAwaitingResources = mReader->IsWaitingMediaResources();
+  }
+
+  if (NS_SUCCEEDED(res) &&
+      mState == DECODER_STATE_DECODING_METADATA &&
+      isAwaitingResources) {
+    // change state to DECODER_STATE_WAIT_FOR_RESOURCES
     StartWaitForResources();
+    // affect values only if ReadMetadata succeeds
     return NS_OK;
   }
 
-  nsresult res;
-  MediaInfo info;
-  {
-    ReentrantMonitorAutoExit exitMon(mDecoder->GetReentrantMonitor());
-    res = mReader->ReadMetadata(&info, getter_Transfers(mMetadataTags));
-  }
-
-  if (NS_SUCCEEDED(res)) {
-    if (mState == DECODER_STATE_DECODING_METADATA &&
-        mReader->IsWaitingMediaResources()) {
-      // change state to DECODER_STATE_WAIT_FOR_RESOURCES
-      StartWaitForResources();
-      // affect values only if ReadMetadata succeeds
-      return NS_OK;
-    }
+  if (NS_FAILED(res) || (!info.HasValidMedia())) {
+    DECODER_WARN("ReadMetadata failed, res=%x HasValidMedia=%d", res, info.HasValidMedia());
+    return NS_ERROR_FAILURE;
   }
 
   if (NS_SUCCEEDED(res)) {
@@ -2209,10 +2240,16 @@ nsresult MediaDecoderStateMachine::DecodeMetadata()
 
   mInfo = info;
 
-  if (NS_FAILED(res) || (!info.HasValidMedia())) {
-    DECODER_WARN("ReadMetadata failed, res=%x HasValidMedia=%d", res, info.HasValidMedia());
-    return NS_ERROR_FAILURE;
+  if (HasVideo()) {
+    mAmpleVideoFrames = (mReader->IsAsync() && mInfo.mVideo.mIsHardwareAccelerated)
+      ? std::max<uint32_t>(sVideoQueueHWAccelSize, MIN_VIDEO_QUEUE_SIZE)
+      : std::max<uint32_t>(sVideoQueueDefaultSize, MIN_VIDEO_QUEUE_SIZE);
+    DECODER_LOG("Video decode isAsync=%d HWAccel=%d videoQueueSize=%d",
+                mReader->IsAsync(),
+                mInfo.mVideo.mIsHardwareAccelerated,
+                mAmpleVideoFrames);
   }
+
   mDecoder->StartProgressUpdates();
   mGotDurationFromMetaData = (GetDuration() != -1) || mDurationSet;
 
@@ -2766,12 +2803,11 @@ nsresult MediaDecoderStateMachine::RunStateMachine()
       // Now that those threads are stopped, there's no possibility of
       // mPendingWakeDecoder being needed again. Revoke it.
       mPendingWakeDecoder = nullptr;
-      {
-        ReentrantMonitorAutoExit exitMon(mDecoder->GetReentrantMonitor());
-        // Wait for the thread decoding, if any, to exit.
-        DecodeTaskQueue()->AwaitIdle();
-        mReader->ReleaseMediaResources();
-      }
+      DebugOnly<nsresult> rv = DecodeTaskQueue()->Dispatch(
+      NS_NewRunnableMethod(mReader, &MediaDecoderReader::ReleaseMediaResources));
+      MOZ_ASSERT(NS_SUCCEEDED(rv));
+      mAudioRequestStatus = RequestStatus::Idle;
+      mVideoRequestStatus = RequestStatus::Idle;
       return NS_OK;
     }
 

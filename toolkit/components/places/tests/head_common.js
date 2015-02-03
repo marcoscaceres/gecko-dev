@@ -599,42 +599,6 @@ function is_time_ordered(before, after) {
 }
 
 /**
- * Waits for all pending async statements on the default connection.
- *
- * @return {Promise}
- * @resolves When all pending async statements finished.
- * @rejects Never.
- *
- * @note The result is achieved by asynchronously executing a query requiring
- *       a write lock.  Since all statements on the same connection are
- *       serialized, the end of this write operation means that all writes are
- *       complete.  Note that WAL makes so that writers don't block readers, but
- *       this is a problem only across different connections.
- */
-function promiseAsyncUpdates()
-{
-  let deferred = Promise.defer();
-
-  let db = DBConn();
-  let begin = db.createAsyncStatement("BEGIN EXCLUSIVE");
-  begin.executeAsync();
-  begin.finalize();
-
-  let commit = db.createAsyncStatement("COMMIT");
-  commit.executeAsync({
-    handleResult: function () {},
-    handleError: function () {},
-    handleCompletion: function(aReason)
-    {
-      deferred.resolve();
-    }
-  });
-  commit.finalize();
-
-  return deferred.promise;
-}
-
-/**
  * Shutdowns Places, invoking the callback when the connection has been closed.
  *
  * @param aCallback
@@ -758,17 +722,6 @@ function do_check_guid_for_bookmark(aId,
     do_check_valid_places_guid(aGUID, caller);
     do_check_eq(guid, aGUID, caller);
   }
-}
-
-/**
- * Logs info to the console in the standard way (includes the filename).
- *
- * @param aMessage
- *        The message to log to the console.
- */
-function do_log_info(aMessage)
-{
-  print("TEST-INFO | " + _TEST_FILE + " | " + aMessage);
 }
 
 /**

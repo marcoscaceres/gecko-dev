@@ -116,7 +116,7 @@ js::ExistingCloneFunctionAtCallsite(const CallsiteCloneTable &table, JSFunction 
 {
     MOZ_ASSERT(fun->nonLazyScript()->shouldCloneAtCallsite());
     MOZ_ASSERT(!fun->nonLazyScript()->enclosingStaticScope());
-    MOZ_ASSERT(types::UseNewTypeForClone(fun));
+    MOZ_ASSERT(types::UseSingletonForClone(fun));
 
     /*
      * If we start allocating function objects in the nursery, then the callsite
@@ -1191,8 +1191,9 @@ ExclusiveContext::stackLimitAddressForJitCode(StackKind kind)
 {
 #if defined(JS_ARM_SIMULATOR) || defined(JS_MIPS_SIMULATOR)
     return runtime_->addressOfSimulatorStackLimit();
-#endif
+#else
     return stackLimitAddress(kind);
+#endif
 }
 
 JSVersion

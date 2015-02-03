@@ -458,7 +458,8 @@ TouchCaret::IsDisplayable()
     return false;
   }
 
-  if (!nsLayoutUtils::IsRectVisibleInScrollFrames(focusFrame, focusRect)) {
+  if (mState != TOUCHCARET_TOUCHDRAG_ACTIVE &&
+        !nsLayoutUtils::IsRectVisibleInScrollFrames(focusFrame, focusRect)) {
     TOUCHCARET_LOG("Caret does not show in the scrollable frame!");
     return false;
   }
@@ -628,7 +629,7 @@ TouchCaret::GetEventPosition(WidgetTouchEvent* aEvent, int32_t aIdentifier)
     if (aEvent->touches[i]->mIdentifier == aIdentifier) {
       // Get event coordinate relative to canvas frame.
       nsIFrame* canvasFrame = GetCanvasFrame();
-      nsIntPoint touchIntPoint = aEvent->touches[i]->mRefPoint;
+      LayoutDeviceIntPoint touchIntPoint = aEvent->touches[i]->mRefPoint;
       return nsLayoutUtils::GetEventCoordinatesRelativeTo(aEvent,
                                                           touchIntPoint,
                                                           canvasFrame);
@@ -642,8 +643,7 @@ TouchCaret::GetEventPosition(WidgetMouseEvent* aEvent)
 {
   // Get event coordinate relative to canvas frame.
   nsIFrame* canvasFrame = GetCanvasFrame();
-  nsIntPoint mouseIntPoint =
-    LayoutDeviceIntPoint::ToUntyped(aEvent->AsGUIEvent()->refPoint);
+  LayoutDeviceIntPoint mouseIntPoint = aEvent->AsGUIEvent()->refPoint;
   return nsLayoutUtils::GetEventCoordinatesRelativeTo(aEvent,
                                                       mouseIntPoint,
                                                       canvasFrame);

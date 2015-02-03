@@ -861,6 +861,9 @@ pref("dom.identity.enabled", true);
 // Wait up to this much milliseconds when orientation changed
 pref("layers.orientation.sync.timeout", 1000);
 
+// Animate the orientation change
+pref("b2g.orientation.animate", true);
+
 // Don't discard WebGL contexts for foreground apps on memory
 // pressure.
 pref("webgl.can-lose-context-in-foreground", false);
@@ -1084,7 +1087,9 @@ pref("dom.requestSync.enabled", true);
 #if ANDROID_VERSION == 19 || ANDROID_VERSION == 21 || ANDROID_VERSION == 15
 pref("gfx.vsync.hw-vsync.enabled", true);
 pref("gfx.vsync.compositor", true);
+pref("gfx.touch.resample", true);
 #else
 pref("gfx.vsync.hw-vsync.enabled", false);
 pref("gfx.vsync.compositor", false);
+pref("gfx.touch.resample", false);
 #endif

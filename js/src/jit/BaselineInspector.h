@@ -93,7 +93,10 @@ class BaselineInspector
 
   public:
     typedef Vector<Shape *, 4, JitAllocPolicy> ShapeVector;
-    bool maybeShapesForPropertyOp(jsbytecode *pc, ShapeVector &shapes);
+    typedef Vector<types::ObjectGroup *, 4, JitAllocPolicy> ObjectGroupVector;
+    bool maybeInfoForPropertyOp(jsbytecode *pc,
+                                ShapeVector &nativeShapes,
+                                ObjectGroupVector &unboxedGroups);
 
     SetElemICInspector setElemICInspector(jsbytecode *pc) {
         return makeICInspector<SetElemICInspector>(pc, ICStub::SetElem_Fallback);
@@ -109,7 +112,7 @@ class BaselineInspector
     bool hasSeenDoubleResult(jsbytecode *pc);
     bool hasSeenNonStringIterMore(jsbytecode *pc);
 
-    NativeObject *getTemplateObject(jsbytecode *pc);
+    JSObject *getTemplateObject(jsbytecode *pc);
     JSObject *getTemplateObjectForNative(jsbytecode *pc, Native native);
     JSObject *getTemplateObjectForClassHook(jsbytecode *pc, const Class *clasp);
 

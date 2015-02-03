@@ -158,10 +158,10 @@ UnboxedPlainObject::trace(JSTracer *trc, JSObject *obj)
 bool
 UnboxedPlainObject::convertToNative(JSContext *cx)
 {
-    // Immediately clear any new script on this object's type,
+    // Immediately clear any new script on this object's group,
     // as rollbackPartiallyInitializedObjects() will be confused by the type
     // changes we make in this function.
-    type()->clearNewScript(cx);
+    group()->clearNewScript(cx);
 
     // clearNewScript() can reentrantly invoke this method.
     if (!is<UnboxedPlainObject>())
@@ -174,7 +174,7 @@ UnboxedPlainObject::convertToNative(JSContext *cx)
 
     AutoValueVector values(cx);
     RootedShape shape(cx, EmptyShape::getInitialShape(cx, &PlainObject::class_, proto,
-                                                      getMetadata(), getParent(), nfixed,
+                                                      getParent(), getMetadata(), nfixed,
                                                       lastProperty()->getObjectFlags()));
     if (!shape)
         return false;
@@ -196,28 +196,24 @@ UnboxedPlainObject::convertToNative(JSContext *cx)
     if (!SetClassAndProto(cx, obj, &PlainObject::class_, proto))
         return false;
 
-    // Any failures after this point will leave the object as a mutant, and we
-    // can't recover.
-
-    RootedPlainObject nobj(cx, &obj->as<PlainObject>());
-    if (!nobj->setLastProperty(cx, nobj, shape))
-        CrashAtUnhandlableOOM("UnboxedPlainObject::convertToNative");
+    RootedNativeObject nobj(cx, &obj->as<PlainObject>());
+    NativeObject::setLastPropertyMakeNative(cx, nobj, shape);
 
     for (size_t i = 0; i < values.length(); i++)
-        nobj->initSlot(i, values[i]);
+        nobj->initSlotUnchecked(i, values[i]);
 
     return true;
 }
 
 /* static */
 UnboxedPlainObject *
-UnboxedPlainObject::create(JSContext *cx, HandleTypeObject type, NewObjectKind newKind)
+UnboxedPlainObject::create(JSContext *cx, HandleObjectGroup group, NewObjectKind newKind)
 {
-    MOZ_ASSERT(type->clasp() == &class_);
-    gc::AllocKind allocKind = type->unboxedLayout().getAllocKind();
+    MOZ_ASSERT(group->clasp() == &class_);
+    gc::AllocKind allocKind = group->unboxedLayout().getAllocKind();
 
-    UnboxedPlainObject *res = NewObjectWithType<UnboxedPlainObject>(cx, type, cx->global(),
-                                                                    allocKind, newKind);
+    UnboxedPlainObject *res = NewObjectWithGroup<UnboxedPlainObject>(cx, group, cx->global(),
+                                                                     allocKind, newKind);
     if (!res)
         return nullptr;
 
@@ -250,7 +246,7 @@ UnboxedPlainObject::obj_lookupGeneric(JSContext *cx, HandleObject obj,
                                       MutableHandleShape propp)
 {
     if (obj->as<UnboxedPlainObject>().layout().lookup(id)) {
-        MarkNonNativePropertyFound(propp);
+        MarkNonNativePropertyFound<CanGC>(propp);
         objp.set(obj);
         return true;
     }
@@ -507,7 +503,7 @@ UnboxedTypeIncludes(JSValueType supertype, JSValueType subtype)
 
 bool
 js::TryConvertToUnboxedLayout(JSContext *cx, Shape *templateShape,
-                              types::TypeObject *type, types::PreliminaryObjectArray *objects)
+                              types::ObjectGroup *group, types::PreliminaryObjectArray *objects)
 {
     if (!cx->runtime()->options().unboxedObjects())
         return true;
@@ -608,7 +604,7 @@ js::TryConvertToUnboxedLayout(JSContext *cx, Shape *templateShape,
     if (sizeof(JSObject) + offset > JSObject::MAX_BYTE_SIZE)
         return true;
 
-    UnboxedLayout *layout = type->zone()->new_<UnboxedLayout>(properties, offset);
+    UnboxedLayout *layout = group->zone()->new_<UnboxedLayout>(properties, offset);
     if (!layout)
         return false;
 
@@ -623,7 +619,7 @@ js::TryConvertToUnboxedLayout(JSContext *cx, Shape *templateShape,
         {
             return false;
         }
-        int32_t *traceList = type->zone()->pod_malloc<int32_t>(entries.length());
+        int32_t *traceList = group->zone()->pod_malloc<int32_t>(entries.length());
         if (!traceList)
             return false;
         PodCopy(traceList, entries.begin(), entries.length());
@@ -631,16 +627,16 @@ js::TryConvertToUnboxedLayout(JSContext *cx, Shape *templateShape,
     }
 
     // We've determined that all the preliminary objects can use the new layout
-    // just constructed, so convert the existing type to be an
+    // just constructed, so convert the existing group to be an
     // UnboxedPlainObject rather than a PlainObject, and update the preliminary
     // objects to use the new layout. Do the fallible stuff first before
     // modifying any objects.
 
     // Get an empty shape which we can use for the preliminary objects.
     Shape *newShape = EmptyShape::getInitialShape(cx, &UnboxedPlainObject::class_,
-                                                  type->proto(),
-                                                  templateShape->getObjectMetadata(),
+                                                  group->proto(),
                                                   templateShape->getObjectParent(),
+                                                  templateShape->getObjectMetadata(),
                                                   templateShape->getObjectFlags());
     if (!newShape) {
         cx->clearPendingException();
@@ -666,11 +662,11 @@ js::TryConvertToUnboxedLayout(JSContext *cx, Shape *templateShape,
         obj->setLastPropertyMakeNonNative(newShape);
     }
 
-    if (types::TypeNewScript *newScript = type->newScript())
+    if (types::TypeNewScript *newScript = group->newScript())
         layout->setNewScript(newScript);
 
-    type->setClasp(&UnboxedPlainObject::class_);
-    type->setUnboxedLayout(layout);
+    group->setClasp(&UnboxedPlainObject::class_);
+    group->setUnboxedLayout(layout);
 
     size_t valueCursor = 0;
     for (size_t i = 0; i < types::PreliminaryObjectArray::COUNT; i++) {

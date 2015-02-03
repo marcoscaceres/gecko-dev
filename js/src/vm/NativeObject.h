@@ -364,7 +364,7 @@ class NativeObject : public JSObject
 
         static_assert(offsetof(NativeObject, shape_) == offsetof(shadow::Object, shape),
                       "shadow shape must match actual shape");
-        static_assert(offsetof(NativeObject, type_) == offsetof(shadow::Object, type),
+        static_assert(offsetof(NativeObject, group_) == offsetof(shadow::Object, group),
                       "shadow type must match actual type");
         static_assert(offsetof(NativeObject, slots_) == offsetof(shadow::Object, slots),
                       "shadow slots must match actual slots");
@@ -416,6 +416,12 @@ class NativeObject : public JSObject
     // object to a non-native one. This leaves the object with a type and shape
     // that are (temporarily) inconsistent.
     void setLastPropertyMakeNonNative(Shape *shape);
+
+    // As for setLastProperty(), but changes the class associated with the
+    // object to a native one. The object's type has already been changed, and
+    // this brings the shape into sync with it.
+    static void setLastPropertyMakeNative(ExclusiveContext *cx, HandleNativeObject obj,
+                                          HandleShape shape);
 
   protected:
 #ifdef DEBUG
@@ -808,8 +814,6 @@ class NativeObject : public JSObject
     static bool rollbackProperties(ExclusiveContext *cx, HandleNativeObject obj,
                                    uint32_t slotSpan);
 
-    inline bool setSlotIfHasType(Shape *shape, const Value &value,
-                                 bool overwriting = true);
     inline void setSlotWithType(ExclusiveContext *cx, Shape *shape,
                                 const Value &value, bool overwriting = true);
 

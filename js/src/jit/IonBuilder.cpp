@@ -189,16 +189,22 @@ IonBuilder::abort(const char *message, ...)
     return false;
 }
 
+IonBuilder *
+IonBuilder::outermostBuilder()
+{
+    IonBuilder *builder = this;
+    while (builder->callerBuilder_)
+        builder = builder->callerBuilder_;
+    return builder;
+}
+
 void
 IonBuilder::trackActionableAbort(const char *message)
 {
     if (!isOptimizationTrackingEnabled())
         return;
 
-    IonBuilder *topBuilder = this;
-    while (topBuilder->callerBuilder_)
-        topBuilder = topBuilder->callerBuilder_;
-
+    IonBuilder *topBuilder = outermostBuilder();
     if (topBuilder->hadActionableAbort())
         return;
 
@@ -228,18 +234,20 @@ IonBuilder::constantMaybeNursery(JSObject *obj)
     // MNurseryObject to ensure we will patch the code with the right
     // pointer after codegen is done.
 
+    ObjectVector &nurseryObjects = outermostBuilder()->nurseryObjects_;
+
     size_t index = UINT32_MAX;
-    for (size_t i = 0, len = nurseryObjects_.length(); i < len; i++) {
-        if (nurseryObjects_[i] == obj) {
+    for (size_t i = 0, len = nurseryObjects.length(); i < len; i++) {
+        if (nurseryObjects[i] == obj) {
             index = i;
             break;
         }
     }
 
     if (index == UINT32_MAX) {
-        if (!nurseryObjects_.append(obj))
+        if (!nurseryObjects.append(obj))
             return nullptr;
-        index = nurseryObjects_.length() - 1;
+        index = nurseryObjects.length() - 1;
     }
 
     MNurseryObject *ins = MNurseryObject::New(alloc(), obj, index, constraints());
@@ -489,7 +497,7 @@ IonBuilder::canInlineTarget(JSFunction *target, CallInfo &callInfo)
         return DontInline(inlineScript, "Script is debuggee");
     }
 
-    types::ObjectGroupKey *targetKey = types::ObjectGroupKey::get(target);
+    types::TypeSetObjectKey *targetKey = types::TypeSetObjectKey::get(target);
     if (targetKey->unknownProperties()) {
         trackOptimizationOutcome(TrackedOutcome::CantInlineUnknownProps);
         return DontInline(inlineScript, "Target type has unknown properties");
@@ -3454,7 +3462,7 @@ IonBuilder::improveTypesAtCompare(MCompare *ins, bool trueBranch, MTest *test)
         if (altersNull)
             flags |= types::TYPE_FLAG_NULL;
 
-        types::TemporaryTypeSet base(flags, static_cast<types::ObjectGroupKey**>(nullptr));
+        types::TemporaryTypeSet base(flags, static_cast<types::TypeSetObjectKey**>(nullptr));
         type = types::TypeSet::intersectSets(&base, subject->resultTypeSet(), alloc_->lifoAlloc());
     }
 
@@ -3583,7 +3591,7 @@ IonBuilder::improveTypesAtTest(MDefinition *ins, bool trueBranch, MTest *test)
             return true;
         }
 
-        types::TemporaryTypeSet base(flags, static_cast<types::ObjectGroupKey**>(nullptr));
+        types::TemporaryTypeSet base(flags, static_cast<types::TypeSetObjectKey**>(nullptr));
         type = types::TypeSet::intersectSets(&base, oldType, alloc_->lifoAlloc());
     }
 
@@ -4501,6 +4509,9 @@ IonBuilder::inlineScriptedCall(CallInfo &callInfo, JSFunction *target)
         return false;
     }
 
+    MOZ_ASSERT(inlineBuilder.nurseryObjects_.empty(),
+               "Nursery objects should be added to outer builder");
+
     // Create return block.
     jsbytecode *postCall = GetNextPc(pc);
     MBasicBlock *returnBlock = newBlock(nullptr, postCall);
@@ -4584,10 +4595,16 @@ IonBuilder::specializeInlinedReturn(MDefinition *rdef, MBasicBlock *exit)
         if (rdef->resultTypeSet()->isSubset(types))
             return rdef;
     } else {
+        MIRType observedType = types->getKnownMIRType();
+
+        // Don't specialize if type is MIRType_Float32 and TI reports
+        // MIRType_Double. Float is more specific than double.
+        if (observedType == MIRType_Double && rdef->type() == MIRType_Float32)
+            return rdef;
+
         // Don't specialize if types are inaccordance, except for MIRType_Value
         // and MIRType_Object (when not unknown object), since the typeset
         // contains more specific information.
-        MIRType observedType = types->getKnownMIRType();
         if (observedType == rdef->type() &&
             observedType != MIRType_Value &&
             (observedType != MIRType_Object || types->unknownObject()))
@@ -4737,7 +4754,7 @@ IonBuilder::makeInliningDecision(JSObject *targetArg, CallInfo &callInfo)
     }
 
     // TI calls ObjectStateChange to trigger invalidation of the caller.
-    types::ObjectGroupKey *targetKey = types::ObjectGroupKey::get(target);
+    types::TypeSetObjectKey *targetKey = types::TypeSetObjectKey::get(target);
     targetKey->watchStateChangeForInlinedCall(constraints());
 
     return InliningDecision_Inline;
@@ -5495,7 +5512,7 @@ IonBuilder::createThisScripted(MDefinition *callee)
 JSObject *
 IonBuilder::getSingletonPrototype(JSFunction *target)
 {
-    types::ObjectGroupKey *targetKey = types::ObjectGroupKey::get(target);
+    types::TypeSetObjectKey *targetKey = types::TypeSetObjectKey::get(target);
     if (targetKey->unknownProperties())
         return nullptr;
 
@@ -5521,7 +5538,7 @@ IonBuilder::createThisScriptedSingleton(JSFunction *target, MDefinition *callee)
     if (!templateObject->hasTenuredProto() || templateObject->getProto() != proto)
         return nullptr;
 
-    types::ObjectGroupKey *templateObjectKey = types::ObjectGroupKey::get(templateObject->group());
+    types::TypeSetObjectKey *templateObjectKey = types::TypeSetObjectKey::get(templateObject->group());
     if (templateObjectKey->hasFlags(constraints(), types::OBJECT_FLAG_NEW_SCRIPT_CLEARED))
         return nullptr;
 
@@ -5888,7 +5905,7 @@ IonBuilder::testShouldDOMCall(types::TypeSet *inTypes,
         return false;
 
     for (unsigned i = 0; i < inTypes->getObjectCount(); i++) {
-        types::ObjectGroupKey *key = inTypes->getObject(i);
+        types::TypeSetObjectKey *key = inTypes->getObject(i);
         if (!key)
             continue;
 
@@ -6303,7 +6320,7 @@ IonBuilder::jsop_initelem_array()
     if (obj->isUnknownValue()) {
         needStub = true;
     } else {
-        types::ObjectGroupKey *initializer = obj->resultTypeSet()->getObject(0);
+        types::TypeSetObjectKey *initializer = obj->resultTypeSet()->getObject(0);
         if (value->type() == MIRType_MagicHole) {
             if (!initializer->hasFlags(constraints(), types::OBJECT_FLAG_NON_PACKED))
                 needStub = true;
@@ -6814,7 +6831,7 @@ static bool
 ClassHasEffectlessLookup(const Class *clasp, PropertyName *name)
 {
     return (clasp == &UnboxedPlainObject::class_) ||
-           (clasp->isNative() && !clasp->ops.lookupGeneric);
+           (clasp->isNative() && !clasp->ops.lookupProperty);
 }
 
 static bool
@@ -6852,9 +6869,7 @@ IonBuilder::insertRecompileCheck()
 
     // Get the topmost builder. The topmost script will get recompiled when
     // warm-up counter is high enough to justify a higher optimization level.
-    IonBuilder *topBuilder = this;
-    while (topBuilder->callerBuilder_)
-        topBuilder = topBuilder->callerBuilder_;
+    IonBuilder *topBuilder = outermostBuilder();
 
     // Add recompile check to recompile when the warm-up count reaches the
     // threshold of the next optimization level.
@@ -6887,7 +6902,7 @@ IonBuilder::testSingletonProperty(JSObject *obj, PropertyName *name)
         if (!ClassHasEffectlessLookup(obj->getClass(), name))
             return nullptr;
 
-        types::ObjectGroupKey *objKey = types::ObjectGroupKey::get(obj);
+        types::TypeSetObjectKey *objKey = types::TypeSetObjectKey::get(obj);
         if (analysisContext)
             objKey->ensureTrackedProperty(analysisContext, NameToId(name));
 
@@ -6968,7 +6983,7 @@ IonBuilder::testSingletonPropertyTypes(MDefinition *obj, JSObject *singleton, Pr
         // find a prototype common to all the objects; if that prototype
         // has the singleton property, the access will not be on a missing property.
         for (unsigned i = 0; i < types->getObjectCount(); i++) {
-            types::ObjectGroupKey *key = types->getObject(i);
+            types::TypeSetObjectKey *key = types->getObject(i);
             if (!key)
                 continue;
             if (analysisContext)
@@ -7197,7 +7212,7 @@ IonBuilder::getStaticName(JSObject *staticObject, PropertyName *name, bool *psuc
         return true;
     }
 
-    types::ObjectGroupKey *staticKey = types::ObjectGroupKey::get(staticObject);
+    types::TypeSetObjectKey *staticKey = types::TypeSetObjectKey::get(staticObject);
     if (analysisContext)
         staticKey->ensureTrackedProperty(analysisContext, NameToId(name));
 
@@ -7301,7 +7316,7 @@ IonBuilder::setStaticName(JSObject *staticObject, PropertyName *name)
 
     MDefinition *value = current->peek(-1);
 
-    types::ObjectGroupKey *staticKey = types::ObjectGroupKey::get(staticObject);
+    types::TypeSetObjectKey *staticKey = types::TypeSetObjectKey::get(staticObject);
     if (staticKey->unknownProperties())
         return jsop_setprop(name);
 
@@ -7609,7 +7624,7 @@ IonBuilder::checkTypedObjectIndexInBounds(int32_t elemSize,
 
         // If we are not loading the length from the object itself, only
         // optimize if the array buffer can't have been neutered.
-        types::ObjectGroupKey *globalKey = types::ObjectGroupKey::get(&script()->global());
+        types::TypeSetObjectKey *globalKey = types::TypeSetObjectKey::get(&script()->global());
         if (globalKey->hasFlags(constraints(), types::OBJECT_FLAG_TYPED_OBJECT_NEUTERED)) {
             trackOptimizationOutcome(TrackedOutcome::TypedObjectNeutered);
             return false;
@@ -7928,7 +7943,7 @@ IonBuilder::getStaticTypedArrayObject(MDefinition *obj, MDefinition *index)
         return nullptr;
     }
 
-    types::ObjectGroupKey *tarrKey = types::ObjectGroupKey::get(tarrObj);
+    types::TypeSetObjectKey *tarrKey = types::TypeSetObjectKey::get(tarrObj);
     if (tarrKey->unknownProperties()) {
         trackOptimizationOutcome(TrackedOutcome::UnknownProperties);
         return nullptr;
@@ -7960,7 +7975,7 @@ IonBuilder::getElemTryTypedStatic(bool *emitted, MDefinition *obj, MDefinition *
     // Emit LoadTypedArrayElementStatic.
 
     if (tarrObj->is<TypedArrayObject>()) {
-        types::ObjectGroupKey *tarrKey = types::ObjectGroupKey::get(tarrObj);
+        types::TypeSetObjectKey *tarrKey = types::TypeSetObjectKey::get(tarrObj);
         tarrKey->watchStateChangeForTypedArrayData(constraints());
     }
 
@@ -8311,7 +8326,7 @@ IonBuilder::addTypedArrayLengthAndData(MDefinition *obj,
         if (isTenured && tarr->isSingleton()) {
             // The 'data' pointer of TypedArrayObject can change in rare circumstances
             // (ArrayBufferObject::changeContents).
-            types::ObjectGroupKey *tarrKey = types::ObjectGroupKey::get(tarr);
+            types::TypeSetObjectKey *tarrKey = types::TypeSetObjectKey::get(tarr);
             if (!tarrKey->unknownProperties()) {
                 if (tarr->is<TypedArrayObject>())
                     tarrKey->watchStateChangeForTypedArrayData(constraints());
@@ -8671,7 +8686,7 @@ IonBuilder::setElemTryTypedStatic(bool *emitted, MDefinition *object,
     // Emit StoreTypedArrayElementStatic.
 
     if (tarrObj->is<TypedArrayObject>()) {
-        types::ObjectGroupKey *tarrKey = types::ObjectGroupKey::get(tarrObj);
+        types::TypeSetObjectKey *tarrKey = types::TypeSetObjectKey::get(tarrObj);
         tarrKey->watchStateChangeForTypedArrayData(constraints());
     }
 
@@ -9079,7 +9094,7 @@ IonBuilder::jsop_length_fastPath()
         // Compute the length for array typed objects.
         TypedObjectPrediction prediction = typedObjectPrediction(obj);
         if (!prediction.isUseless()) {
-            types::ObjectGroupKey *globalKey = types::ObjectGroupKey::get(&script()->global());
+            types::TypeSetObjectKey *globalKey = types::TypeSetObjectKey::get(&script()->global());
             if (globalKey->hasFlags(constraints(), types::OBJECT_FLAG_TYPED_OBJECT_NEUTERED))
                 return false;
 
@@ -9207,7 +9222,7 @@ IonBuilder::getDefiniteSlot(types::TemporaryTypeSet *types, PropertyName *name)
     // objects, which often have a different number of fixed slots from
     // subsequent objects.
     for (size_t i = 0; i < types->getObjectCount(); i++) {
-        types::ObjectGroupKey *key = types->getObject(i);
+        types::TypeSetObjectKey *key = types->getObject(i);
         if (!key)
             continue;
 
@@ -9223,7 +9238,7 @@ IonBuilder::getDefiniteSlot(types::TemporaryTypeSet *types, PropertyName *name)
     uint32_t slot = UINT32_MAX;
 
     for (size_t i = 0; i < types->getObjectCount(); i++) {
-        types::ObjectGroupKey *key = types->getObject(i);
+        types::TypeSetObjectKey *key = types->getObject(i);
         if (!key)
             continue;
 
@@ -9269,7 +9284,7 @@ IonBuilder::getUnboxedOffset(types::TemporaryTypeSet *types, PropertyName *name,
     uint32_t offset = UINT32_MAX;
 
     for (size_t i = 0; i < types->getObjectCount(); i++) {
-        types::ObjectGroupKey *key = types->getObject(i);
+        types::TypeSetObjectKey *key = types->getObject(i);
         if (!key)
             continue;
 
@@ -9348,7 +9363,7 @@ IonBuilder::objectsHaveCommonPrototype(types::TemporaryTypeSet *types, PropertyN
         if (types->getSingleton(i) == foundProto)
             continue;
 
-        types::ObjectGroupKey *key = types->getObject(i);
+        types::TypeSetObjectKey *key = types->getObject(i);
         if (!key)
             continue;
 
@@ -9367,11 +9382,11 @@ IonBuilder::objectsHaveCommonPrototype(types::TemporaryTypeSet *types, PropertyN
             }
 
             // Look for a getter/setter on the class itself which may need
-            // to be called. Ignore the getGeneric hook for typed arrays, it
+            // to be called. Ignore the getProperty op for typed arrays, it
             // only handles integers and forwards names to the prototype.
-            if (isGetter && clasp->ops.getGeneric && !IsAnyTypedArrayClass(clasp))
+            if (isGetter && clasp->ops.getProperty && !IsAnyTypedArrayClass(clasp))
                 return false;
-            if (!isGetter && clasp->ops.setGeneric)
+            if (!isGetter && clasp->ops.setProperty)
                 return false;
 
             // Test for isOwnProperty() without freezing. If we end up
@@ -9397,7 +9412,7 @@ IonBuilder::objectsHaveCommonPrototype(types::TemporaryTypeSet *types, PropertyN
                 // object's prototype chain.
                 return false;
             }
-            key = types::ObjectGroupKey::get(proto);
+            key = types::TypeSetObjectKey::get(proto);
         }
     }
 
@@ -9415,7 +9430,7 @@ IonBuilder::freezePropertiesForCommonPrototype(types::TemporaryTypeSet *types, P
         if (types->getSingleton(i) == foundProto)
             continue;
 
-        types::ObjectGroupKey *key = types->getObject(i);
+        types::TypeSetObjectKey *key = types->getObject(i);
         if (!key)
             continue;
 
@@ -9428,7 +9443,7 @@ IonBuilder::freezePropertiesForCommonPrototype(types::TemporaryTypeSet *types, P
             // with properties unknown to TI.
             if (key->protoMaybeInNursery() == TaggedProto(foundProto))
                 break;
-            key = types::ObjectGroupKey::get(key->protoMaybeInNursery().toObjectOrNull());
+            key = types::TypeSetObjectKey::get(key->protoMaybeInNursery().toObjectOrNull());
         }
     }
 }
@@ -9522,7 +9537,7 @@ IonBuilder::annotateGetPropertyCache(MDefinition *obj, MGetPropertyCache *getPro
         types::ObjectGroup *group = objTypes->getGroup(i);
         if (!group)
             continue;
-        types::ObjectGroupKey *key = types::ObjectGroupKey::get(group);
+        types::TypeSetObjectKey *key = types::TypeSetObjectKey::get(group);
         if (key->unknownProperties() || !key->hasTenuredProto() || !key->proto().isObject())
             continue;
 
@@ -9809,7 +9824,7 @@ IonBuilder::getPropTryInferredConstant(bool *emitted, MDefinition *obj, Property
         return true;
     }
 
-    types::ObjectGroupKey *key = types::ObjectGroupKey::get(singleton);
+    types::TypeSetObjectKey *key = types::TypeSetObjectKey::get(singleton);
     if (key->unknownProperties()) {
         trackOptimizationOutcome(TrackedOutcome::UnknownProperties);
         return true;
@@ -9968,7 +9983,7 @@ IonBuilder::getPropTryScalarPropOfTypedObject(bool *emitted, MDefinition *typedO
     Scalar::Type fieldType = fieldPrediction.scalarType();
 
     // Don't optimize if the typed object might be neutered.
-    types::ObjectGroupKey *globalKey = types::ObjectGroupKey::get(&script()->global());
+    types::TypeSetObjectKey *globalKey = types::TypeSetObjectKey::get(&script()->global());
     if (globalKey->hasFlags(constraints(), types::OBJECT_FLAG_TYPED_OBJECT_NEUTERED))
         return true;
 
@@ -9990,7 +10005,7 @@ IonBuilder::getPropTryReferencePropOfTypedObject(bool *emitted, MDefinition *typ
 {
     ReferenceTypeDescr::Type fieldType = fieldPrediction.referenceType();
 
-    types::ObjectGroupKey *globalKey = types::ObjectGroupKey::get(&script()->global());
+    types::TypeSetObjectKey *globalKey = types::TypeSetObjectKey::get(&script()->global());
     if (globalKey->hasFlags(constraints(), types::OBJECT_FLAG_TYPED_OBJECT_NEUTERED))
         return true;
 
@@ -10012,7 +10027,7 @@ IonBuilder::getPropTryComplexPropOfTypedObject(bool *emitted,
                                                size_t fieldIndex)
 {
     // Don't optimize if the typed object might be neutered.
-    types::ObjectGroupKey *globalKey = types::ObjectGroupKey::get(&script()->global());
+    types::TypeSetObjectKey *globalKey = types::TypeSetObjectKey::get(&script()->global());
     if (globalKey->hasFlags(constraints(), types::OBJECT_FLAG_TYPED_OBJECT_NEUTERED))
         return true;
 
@@ -10152,8 +10167,28 @@ IonBuilder::getPropTryUnboxed(bool *emitted, MDefinition *obj, PropertyName *nam
     if (!pushTypeBarrier(load, types, barrier))
         return false;
 
+    trackOptimizationSuccess();
     *emitted = true;
     return true;
+}
+
+MDefinition *
+IonBuilder::addShapeGuardsForGetterSetter(MDefinition *obj, JSObject *holder, Shape *holderShape,
+                                          const BaselineInspector::ShapeVector &receiverShapes,
+                                          bool isOwnProperty)
+{
+    MOZ_ASSERT(holder);
+    MOZ_ASSERT(holderShape);
+
+    if (isOwnProperty) {
+        MOZ_ASSERT(receiverShapes.empty());
+        return addShapeGuard(obj, holderShape, Bailout_ShapeGuard);
+    }
+
+    MDefinition *holderDef = constantMaybeNursery(holder);
+    addShapeGuard(holderDef, holderShape, Bailout_ShapeGuard);
+
+    return addShapeGuardPolymorphic(obj, receiverShapes);
 }
 
 bool
@@ -10165,21 +10200,32 @@ IonBuilder::getPropTryCommonGetter(bool *emitted, MDefinition *obj, PropertyName
     Shape *lastProperty = nullptr;
     JSFunction *commonGetter = nullptr;
     Shape *globalShape = nullptr;
-    JSObject *foundProto = inspector->commonGetPropFunction(pc, &lastProperty, &commonGetter, &globalShape);
-    if (!foundProto)
+    JSObject *foundProto = nullptr;
+    bool isOwnProperty = false;
+    BaselineInspector::ShapeVector receiverShapes(alloc());
+    if (!inspector->commonGetPropFunction(pc, &foundProto, &lastProperty, &commonGetter,
+                                          &globalShape, &isOwnProperty, receiverShapes))
+    {
         return true;
+    }
 
     types::TemporaryTypeSet *objTypes = obj->resultTypeSet();
     MDefinition *guard = nullptr;
     MDefinition *globalGuard = nullptr;
-    bool canUseCommonGetter =
+    bool canUseTIForGetter =
         testCommonGetterSetter(objTypes, name, /* isGetter = */ true,
                                foundProto, lastProperty, &guard, globalShape,
                                &globalGuard);
-    if (!canUseCommonGetter)
-        return true;
+    if (!canUseTIForGetter) {
+        // If type information is bad, we can still optimize the getter if we
+        // shape guard.
+        obj = addShapeGuardsForGetterSetter(obj, foundProto, lastProperty, receiverShapes,
+                                            isOwnProperty);
+        if (!obj)
+            return false;
+    }
 
-    bool isDOM = objTypes->isDOMClass(constraints());
+    bool isDOM = objTypes && objTypes->isDOMClass(constraints());
 
     if (isDOM && testShouldDOMCall(objTypes, commonGetter, JSJitInfo::Getter)) {
         const JSJitInfo *jitinfo = commonGetter->jitInfo();
@@ -10219,7 +10265,7 @@ IonBuilder::getPropTryCommonGetter(bool *emitted, MDefinition *obj, PropertyName
     }
 
     // Don't call the getter with a primitive value.
-    if (objTypes->getKnownMIRType() != MIRType_Object) {
+    if (obj->type() != MIRType_Object) {
         MGuardObject *guardObj = MGuardObject::New(alloc(), obj);
         current->add(guardObj);
         obj = guardObj;
@@ -10410,17 +10456,9 @@ IonBuilder::getPropTryInlineAccess(bool *emitted, MDefinition *obj, PropertyName
         return false;
 
     if (sameSlot && unboxedGroups.empty()) {
-        MGuardShapePolymorphic *guard = MGuardShapePolymorphic::New(alloc(), obj);
-        current->add(guard);
-        obj = guard;
-
-        if (failedShapeGuard_)
-            guard->setNotMovable();
-
-        for (size_t i = 0; i < nativeShapes.length(); i++) {
-            if (!guard->addShape(nativeShapes[i]))
-                return false;
-        }
+        obj = addShapeGuardPolymorphic(obj, nativeShapes);
+        if (!obj)
+            return false;
 
         if (!loadSlot(obj, propShapes[0], rvalType, barrier, types))
             return false;
@@ -10561,7 +10599,7 @@ IonBuilder::tryInnerizeWindow(MDefinition *obj)
     // When we navigate, the outer object is brain transplanted and we'll mark
     // its ObjectGroup as having unknown properties. The type constraint we add
     // here will invalidate JIT code when this happens.
-    types::ObjectGroupKey *key = types::ObjectGroupKey::get(singleton);
+    types::TypeSetObjectKey *key = types::TypeSetObjectKey::get(singleton);
     if (key->hasFlags(constraints(), types::OBJECT_FLAG_UNKNOWN_PROPERTIES))
         return obj;
 
@@ -10672,21 +10710,29 @@ IonBuilder::setPropTryCommonSetter(bool *emitted, MDefinition *obj,
 
     Shape *lastProperty = nullptr;
     JSFunction *commonSetter = nullptr;
-    JSObject *foundProto = inspector->commonSetPropFunction(pc, &lastProperty, &commonSetter);
-    if (!foundProto) {
+    JSObject *foundProto = nullptr;
+    bool isOwnProperty;
+    BaselineInspector::ShapeVector receiverShapes(alloc());
+    if (!inspector->commonSetPropFunction(pc, &foundProto, &lastProperty, &commonSetter, &isOwnProperty,
+                                          receiverShapes))
+    {
         trackOptimizationOutcome(TrackedOutcome::NoProtoFound);
         return true;
     }
 
     types::TemporaryTypeSet *objTypes = obj->resultTypeSet();
     MDefinition *guard = nullptr;
-    bool canUseCommonSetter =
+    bool canUseTIForSetter =
         testCommonGetterSetter(objTypes, name, /* isGetter = */ false,
                                foundProto, lastProperty, &guard);
-    if (!canUseCommonSetter)
-        return true;
-
-    bool isDOM = objTypes->isDOMClass(constraints());
+    if (!canUseTIForSetter) {
+        // If type information is bad, we can still optimize the setter if we
+        // shape guard.
+        obj = addShapeGuardsForGetterSetter(obj, foundProto, lastProperty, receiverShapes,
+                                            isOwnProperty);
+        if (!obj)
+            return false;
+    }
 
     // Emit common setter.
 
@@ -10695,7 +10741,7 @@ IonBuilder::setPropTryCommonSetter(bool *emitted, MDefinition *obj,
     // properties.
 
     // Try emitting dom call.
-    if (!setPropTryCommonDOMSetter(emitted, obj, value, commonSetter, isDOM))
+    if (!setPropTryCommonDOMSetter(emitted, obj, value, commonSetter, objTypes))
         return false;
 
     if (*emitted) {
@@ -10704,7 +10750,7 @@ IonBuilder::setPropTryCommonSetter(bool *emitted, MDefinition *obj,
     }
 
     // Don't call the setter with a primitive value.
-    if (objTypes->getKnownMIRType() != MIRType_Object) {
+    if (obj->type() != MIRType_Object) {
         MGuardObject *guardObj = MGuardObject::New(alloc(), obj);
         current->add(guardObj);
         obj = guardObj;
@@ -10767,14 +10813,13 @@ IonBuilder::setPropTryCommonSetter(bool *emitted, MDefinition *obj,
 bool
 IonBuilder::setPropTryCommonDOMSetter(bool *emitted, MDefinition *obj,
                                       MDefinition *value, JSFunction *setter,
-                                      bool isDOM)
+                                      types::TemporaryTypeSet *objTypes)
 {
     MOZ_ASSERT(*emitted == false);
 
-    if (!isDOM)
+    if (!objTypes || !objTypes->isDOMClass(constraints()))
         return true;
 
-    types::TemporaryTypeSet *objTypes = obj->resultTypeSet();
     if (!testShouldDOMCall(objTypes, setter, JSJitInfo::Setter))
         return true;
 
@@ -10833,7 +10878,7 @@ IonBuilder::setPropTryReferencePropOfTypedObject(bool *emitted,
 {
     ReferenceTypeDescr::Type fieldType = fieldPrediction.referenceType();
 
-    types::ObjectGroupKey *globalKey = types::ObjectGroupKey::get(&script()->global());
+    types::TypeSetObjectKey *globalKey = types::TypeSetObjectKey::get(&script()->global());
     if (globalKey->hasFlags(constraints(), types::OBJECT_FLAG_TYPED_OBJECT_NEUTERED))
         return true;
 
@@ -10862,7 +10907,7 @@ IonBuilder::setPropTryScalarPropOfTypedObject(bool *emitted,
     Scalar::Type fieldType = fieldPrediction.scalarType();
 
     // Don't optimize if the typed object might be neutered.
-    types::ObjectGroupKey *globalKey = types::ObjectGroupKey::get(&script()->global());
+    types::TypeSetObjectKey *globalKey = types::TypeSetObjectKey::get(&script()->global());
     if (globalKey->hasFlags(constraints(), types::OBJECT_FLAG_TYPED_OBJECT_NEUTERED))
         return true;
 
@@ -10898,7 +10943,7 @@ IonBuilder::setPropTryDefiniteSlot(bool *emitted, MDefinition *obj,
 
     bool writeBarrier = false;
     for (size_t i = 0; i < obj->resultTypeSet()->getObjectCount(); i++) {
-        types::ObjectGroupKey *key = obj->resultTypeSet()->getObject(i);
+        types::TypeSetObjectKey *key = obj->resultTypeSet()->getObject(i);
         if (!key)
             continue;
 
@@ -11088,17 +11133,9 @@ IonBuilder::setPropTryInlineAccess(bool *emitted, MDefinition *obj,
         return false;
 
     if (sameSlot && unboxedGroups.empty()) {
-        MGuardShapePolymorphic *guard = MGuardShapePolymorphic::New(alloc(), obj);
-        current->add(guard);
-        obj = guard;
-
-        if (failedShapeGuard_)
-            guard->setNotMovable();
-
-        for (size_t i = 0; i < nativeShapes.length(); i++) {
-            if (!guard->addShape(nativeShapes[i]))
-                return false;
-        }
+        obj = addShapeGuardPolymorphic(obj, nativeShapes);
+        if (!obj)
+            return false;
 
         bool needsBarrier = objTypes->propertyNeedsBarrier(constraints(), NameToId(name));
         if (!storeSlot(obj, propShapes[0], value, needsBarrier))
@@ -11202,7 +11239,7 @@ IonBuilder::jsop_regexp(RegExpObject *reobj)
     // avoid cloning in this case.
 
     bool mustClone = true;
-    types::ObjectGroupKey *globalKey = types::ObjectGroupKey::get(&script()->global());
+    types::TypeSetObjectKey *globalKey = types::TypeSetObjectKey::get(&script()->global());
     if (!globalKey->hasFlags(constraints(), types::OBJECT_FLAG_REGEXP_FLAGS_SET)) {
 #ifdef DEBUG
         // Only compare the statics if the one on script()->global() has been
@@ -11590,8 +11627,8 @@ IonBuilder::hasStaticScopeObject(ScopeCoordinate sc, JSObject **pcall)
     if (!outerScript || !outerScript->treatAsRunOnce())
         return false;
 
-    types::ObjectGroupKey *funKey =
-        types::ObjectGroupKey::get(outerScript->functionNonDelazifying());
+    types::TypeSetObjectKey *funKey =
+        types::TypeSetObjectKey::get(outerScript->functionNonDelazifying());
     if (funKey->hasFlags(constraints(), types::OBJECT_FLAG_RUNONCE_INVALIDATED))
         return false;
 
@@ -11793,7 +11830,7 @@ IonBuilder::jsop_in_dense()
 }
 
 static bool
-HasOnProtoChain(types::CompilerConstraintList *constraints, types::ObjectGroupKey *key,
+HasOnProtoChain(types::CompilerConstraintList *constraints, types::TypeSetObjectKey *key,
                 JSObject *protoObject, bool *hasOnProto)
 {
     MOZ_ASSERT(protoObject);
@@ -11817,7 +11854,7 @@ HasOnProtoChain(types::CompilerConstraintList *constraints, types::ObjectGroupKe
             return true;
         }
 
-        key = types::ObjectGroupKey::get(proto);
+        key = types::TypeSetObjectKey::get(proto);
     }
 
     MOZ_CRASH("Unreachable");
@@ -11845,7 +11882,7 @@ IonBuilder::tryFoldInstanceOf(MDefinition *lhs, JSObject *protoObject)
     bool knownIsInstance = false;
 
     for (unsigned i = 0; i < lhsTypes->getObjectCount(); i++) {
-        types::ObjectGroupKey *key = lhsTypes->getObject(i);
+        types::TypeSetObjectKey *key = lhsTypes->getObject(i);
         if (!key)
             continue;
 
@@ -11892,7 +11929,7 @@ IonBuilder::jsop_instanceof()
         if (!rhsObject || !rhsObject->is<JSFunction>() || rhsObject->isBoundFunction())
             break;
 
-        types::ObjectGroupKey *rhsKey = types::ObjectGroupKey::get(rhsObject);
+        types::TypeSetObjectKey *rhsKey = types::TypeSetObjectKey::get(rhsObject);
         if (rhsKey->unknownProperties())
             break;
 
@@ -12009,6 +12046,28 @@ IonBuilder::addShapeGuard(MDefinition *obj, Shape *const shape, BailoutKind bail
     return guard;
 }
 
+MInstruction *
+IonBuilder::addShapeGuardPolymorphic(MDefinition *obj, const BaselineInspector::ShapeVector &shapes)
+{
+    if (shapes.length() == 1)
+        return addShapeGuard(obj, shapes[0], Bailout_ShapeGuard);
+
+    MOZ_ASSERT(shapes.length() > 1);
+
+    MGuardShapePolymorphic *guard = MGuardShapePolymorphic::New(alloc(), obj);
+    current->add(guard);
+
+    if (failedShapeGuard_)
+        guard->setNotMovable();
+
+    for (size_t i = 0, len = shapes.length(); i < len; i++) {
+        if (!guard->addShape(shapes[i]))
+            return nullptr;
+    }
+
+    return guard;
+}
+
 types::TemporaryTypeSet *
 IonBuilder::bytecodeTypes(jsbytecode *pc)
 {
@@ -12041,7 +12100,7 @@ IonBuilder::typedObjectPrediction(types::TemporaryTypeSet *types)
     TypedObjectPrediction out;
     for (uint32_t i = 0; i < types->getObjectCount(); i++) {
         types::ObjectGroup *group = types->getGroup(i);
-        if (!group || !types::ObjectGroupKey::get(group)->hasStableClassAndProto(constraints()))
+        if (!group || !types::TypeSetObjectKey::get(group)->hasStableClassAndProto(constraints()))
             return TypedObjectPrediction();
 
         if (!IsTypedObjectClass(group->clasp()))

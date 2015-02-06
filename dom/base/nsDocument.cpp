@@ -1056,8 +1056,8 @@ void
 TransferZoomLevels(nsIDocument* aFromDoc,
                    nsIDocument* aToDoc)
 {
-  NS_ABORT_IF_FALSE(aFromDoc && aToDoc,
-                    "transferring zoom levels from/to null doc");
+  MOZ_ASSERT(aFromDoc && aToDoc,
+             "transferring zoom levels from/to null doc");
 
   nsIPresShell* fromShell = aFromDoc->GetShell();
   if (!fromShell)
@@ -1083,8 +1083,8 @@ TransferZoomLevels(nsIDocument* aFromDoc,
 void
 TransferShowingState(nsIDocument* aFromDoc, nsIDocument* aToDoc)
 {
-  NS_ABORT_IF_FALSE(aFromDoc && aToDoc,
-                    "transferring showing state from/to null doc");
+  MOZ_ASSERT(aFromDoc && aToDoc,
+             "transferring showing state from/to null doc");
 
   if (aFromDoc->IsShowing()) {
     aToDoc->OnPageShow(true, nullptr);
@@ -1624,8 +1624,8 @@ ClearAllBoxObjects(nsIContent* aKey, nsPIBoxObject* aBoxObject, void* aUserArg)
 
 nsIDocument::~nsIDocument()
 {
-  NS_ABORT_IF_FALSE(PR_CLIST_IS_EMPTY(&mDOMMediaQueryLists),
-                    "must not have media query lists left");
+  MOZ_ASSERT(PR_CLIST_IS_EMPTY(&mDOMMediaQueryLists),
+             "must not have media query lists left");
 
   if (mNodeInfoManager) {
     mNodeInfoManager->DropDocumentReference();
@@ -1715,8 +1715,8 @@ nsDocument::~nsDocument()
   // Kill the subdocument map, doing this will release its strong
   // references, if any.
   if (mSubDocuments) {
-    PL_DHashTableDestroy(mSubDocuments);
-
+    PL_DHashTableFinish(mSubDocuments);
+    delete mSubDocuments;
     mSubDocuments = nullptr;
   }
 
@@ -2126,7 +2126,8 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsDocument)
   }
 
   if (tmp->mSubDocuments) {
-    PL_DHashTableDestroy(tmp->mSubDocuments);
+    PL_DHashTableFinish(tmp->mSubDocuments);
+    delete tmp->mSubDocuments;
     tmp->mSubDocuments = nullptr;
   }
 
@@ -2210,8 +2211,8 @@ nsDocument::Init()
   // mNodeInfo keeps NodeInfoManager alive!
   mNodeInfo = mNodeInfoManager->GetDocumentNodeInfo();
   NS_ENSURE_TRUE(mNodeInfo, NS_ERROR_OUT_OF_MEMORY);
-  NS_ABORT_IF_FALSE(mNodeInfo->NodeType() == nsIDOMNode::DOCUMENT_NODE,
-                    "Bad NodeType in aNodeInfo");
+  MOZ_ASSERT(mNodeInfo->NodeType() == nsIDOMNode::DOCUMENT_NODE,
+             "Bad NodeType in aNodeInfo");
 
   NS_ASSERTION(OwnerDoc() == this, "Our nodeinfo is busted!");
 
@@ -2331,8 +2332,8 @@ nsDocument::ResetToURI(nsIURI *aURI, nsILoadGroup *aLoadGroup,
   // Delete references to sub-documents and kill the subdocument map,
   // if any. It holds strong references
   if (mSubDocuments) {
-    PL_DHashTableDestroy(mSubDocuments);
-
+    PL_DHashTableFinish(mSubDocuments);
+    delete mSubDocuments;
     mSubDocuments = nullptr;
   }
 
@@ -3103,15 +3104,32 @@ nsDocument::GetLastModified(nsAString& aLastModified)
   return NS_OK;
 }
 
+static void
+GetFormattedTimeString(PRTime aTime, nsAString& aFormattedTimeString)
+{
+  PRExplodedTime prtime;
+  PR_ExplodeTime(aTime, PR_LocalTimeParameters, &prtime);
+  // "MM/DD/YYYY hh:mm:ss"
+  char formatedTime[24];
+  if (PR_snprintf(formatedTime, sizeof(formatedTime),
+                  "%02ld/%02ld/%04hd %02ld:%02ld:%02ld",
+                  prtime.tm_month + 1, prtime.tm_mday, prtime.tm_year,
+                  prtime.tm_hour     ,  prtime.tm_min,  prtime.tm_sec)) {
+    CopyASCIItoUTF16(nsDependentCString(formatedTime), aFormattedTimeString);
+  } else {
+    // If we for whatever reason failed to find the last modified time
+    // (or even the current time), fall back to what NS4.x returned.
+    aFormattedTimeString.AssignLiteral(MOZ_UTF16("01/01/1970 00:00:00"));
+  }
+}
+
 void
 nsIDocument::GetLastModified(nsAString& aLastModified) const
 {
   if (!mLastModified.IsEmpty()) {
     aLastModified.Assign(mLastModified);
   } else {
-    // If we for whatever reason failed to find the last modified time
-    // (or even the current time), fall back to what NS4.x returned.
-    aLastModified.AssignLiteral(MOZ_UTF16("01/01/1970 00:00:00"));
+    GetFormattedTimeString(PR_Now(), aLastModified);
   }
 }
 
@@ -3984,16 +4002,13 @@ nsDocument::SetSubDocumentFor(Element* aElement, nsIDocument* aSubDoc)
         SubDocInitEntry
       };
 
-      mSubDocuments = PL_NewDHashTable(&hash_table_ops, sizeof(SubDocMapEntry));
-      if (!mSubDocuments) {
-        return NS_ERROR_OUT_OF_MEMORY;
-      }
+      mSubDocuments = new PLDHashTable();
+      PL_DHashTableInit(mSubDocuments, &hash_table_ops, sizeof(SubDocMapEntry));
     }
 
     // Add a mapping to the hash table
-    SubDocMapEntry *entry =
-      static_cast<SubDocMapEntry*>
-                 (PL_DHashTableAdd(mSubDocuments, aElement));
+    SubDocMapEntry *entry = static_cast<SubDocMapEntry*>
+      (PL_DHashTableAdd(mSubDocuments, aElement, fallible));
 
     if (!entry) {
       return NS_ERROR_OUT_OF_MEMORY;
@@ -4657,11 +4672,11 @@ nsDocument::SetScriptGlobalObject(nsIScriptGlobalObject *aScriptGlobalObject)
                  "Script global object must be an inner window!");
   }
 #endif
-  NS_ABORT_IF_FALSE(aScriptGlobalObject || !mAnimationController ||
-                    mAnimationController->IsPausedByType(
-                        nsSMILTimeContainer::PAUSE_PAGEHIDE |
-                        nsSMILTimeContainer::PAUSE_BEGIN),
-                    "Clearing window pointer while animations are unpaused");
+  MOZ_ASSERT(aScriptGlobalObject || !mAnimationController ||
+             mAnimationController->IsPausedByType(
+               nsSMILTimeContainer::PAUSE_PAGEHIDE |
+               nsSMILTimeContainer::PAUSE_BEGIN),
+             "Clearing window pointer while animations are unpaused");
 
   if (mScriptGlobalObject && !aScriptGlobalObject) {
     // We're detaching from the window.  We need to grab a pointer to
@@ -8597,25 +8612,9 @@ nsDocument::RetrieveRelevantHeaders(nsIChannel *aChannel)
     }
   }
 
-  if (modDate == 0) {
-    // We got nothing from our attempt to ask nsIFileChannel and
-    // nsIHttpChannel for the last modified time. Return the current
-    // time.
-    modDate = PR_Now();
-  }
-
   mLastModified.Truncate();
   if (modDate != 0) {
-    PRExplodedTime prtime;
-    PR_ExplodeTime(modDate, PR_LocalTimeParameters, &prtime);
-    // "MM/DD/YYYY hh:mm:ss"
-    char formatedTime[24];
-    if (PR_snprintf(formatedTime, sizeof(formatedTime),
-                    "%02ld/%02ld/%04hd %02ld:%02ld:%02ld",
-                    prtime.tm_month + 1, prtime.tm_mday, prtime.tm_year,
-                    prtime.tm_hour     ,  prtime.tm_min,  prtime.tm_sec)) {
-      CopyASCIItoUTF16(nsDependentCString(formatedTime), mLastModified);
-    }
+    GetFormattedTimeString(modDate, mLastModified);
   }
 }
 
@@ -10407,8 +10406,8 @@ nsDocument::RemoveImage(imgIRequest* aImage, uint32_t aFlags)
   // Get the old count. It should exist and be > 0.
   uint32_t count = 0;
   DebugOnly<bool> found = mImageTracker.Get(aImage, &count);
-  NS_ABORT_IF_FALSE(found, "Removing image that wasn't in the tracker!");
-  NS_ABORT_IF_FALSE(count > 0, "Entry in the cache tracker with count 0!");
+  MOZ_ASSERT(found, "Removing image that wasn't in the tracker!");
+  MOZ_ASSERT(count > 0, "Entry in the cache tracker with count 0!");
 
   // We're removing, so decrement the count.
   count--;

@@ -4371,9 +4371,8 @@ FrameLayerBuilder::RecomputeVisibilityForItems(nsTArray<ClippedDisplayItem>& aIt
     NS_ASSERTION(AppUnitsPerDevPixel(cdi->mItem) == aAppUnitsPerDevPixel,
                  "a painted layer should contain items only at the same zoom");
 
-    NS_ABORT_IF_FALSE(clip.HasClip() ||
-                      clip.GetRoundedRectCount() == 0,
-                      "If we have rounded rects, we must have a clip rect");
+    MOZ_ASSERT(clip.HasClip() || clip.GetRoundedRectCount() == 0,
+               "If we have rounded rects, we must have a clip rect");
 
     if (!clip.IsRectAffectedByClip(visible.GetBounds())) {
       cdi->mItem->RecomputeVisibility(aBuilder, &visible);
@@ -4730,6 +4729,31 @@ FrameLayerBuilder::CheckDOMModified()
 FrameLayerBuilder::DumpRetainedLayerTree(LayerManager* aManager, std::stringstream& aStream, bool aDumpHtml)
 {
   aManager->Dump(aStream, "", aDumpHtml);
+}
+
+nsDisplayItemGeometry*
+FrameLayerBuilder::GetMostRecentGeometry(nsDisplayItem* aItem)
+{
+  typedef nsTArray<DisplayItemData*> DataArray;
+
+  // Retrieve the array of DisplayItemData associated with our frame.
+  FrameProperties properties = aItem->Frame()->Properties();
+  auto dataArray =
+    static_cast<DataArray*>(properties.Get(LayerManagerDataProperty()));
+  if (!dataArray) {
+    return nullptr;
+  }
+
+  // Find our display item data, if it exists, and return its geometry.
+  uint32_t itemPerFrameKey = aItem->GetPerFrameKey();
+  for (uint32_t i = 0; i < dataArray->Length(); i++) {
+    DisplayItemData* data = dataArray->ElementAt(i);
+    if (data->GetDisplayItemKey() == itemPerFrameKey) {
+      return data->GetGeometry();
+    }
+  }
+
+  return nullptr;
 }
 
 gfx::Rect

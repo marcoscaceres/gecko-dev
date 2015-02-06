@@ -1010,7 +1010,7 @@ RasterImage::StartAnimation()
   if (mError)
     return NS_ERROR_FAILURE;
 
-  NS_ABORT_IF_FALSE(ShouldAnimate(), "Should not animate!");
+  MOZ_ASSERT(ShouldAnimate(), "Should not animate!");
 
   // If we don't have mAnim yet, then we're not ready to animate.  Setting
   // mPendingAnimation will cause us to start animating as soon as we have a
@@ -1038,7 +1038,7 @@ RasterImage::StartAnimation()
 nsresult
 RasterImage::StopAnimation()
 {
-  NS_ABORT_IF_FALSE(mAnimating, "Should be animating!");
+  MOZ_ASSERT(mAnimating, "Should be animating!");
 
   nsresult rv = NS_OK;
   if (mError) {
@@ -1209,7 +1209,7 @@ RasterImage::OnImageDataAvailable(nsIRequest*,
   uint32_t bytesRead;
   rv = aInStr->ReadSegments(WriteToSourceBuffer, this, aCount, &bytesRead);
 
-  NS_ABORT_IF_FALSE(bytesRead == aCount || HasError() || NS_FAILED(rv),
+  MOZ_ASSERT(bytesRead == aCount || HasError() || NS_FAILED(rv),
     "WriteToSourceBuffer should consume everything if ReadSegments succeeds or "
     "the image must be in error!");
 
@@ -1699,7 +1699,7 @@ RasterImage::RequestScale(imgFrame* aFrame,
   }
 }
 
-void
+DrawResult
 RasterImage::DrawWithPreDownscaleIfNeeded(DrawableFrameRef&& aFrameRef,
                                           gfxContext* aContext,
                                           const nsIntSize& aSize,
@@ -1728,23 +1728,39 @@ RasterImage::DrawWithPreDownscaleIfNeeded(DrawableFrameRef&& aFrameRef,
 
   gfxContextMatrixAutoSaveRestore saveMatrix(aContext);
   ImageRegion region(aRegion);
+  bool frameIsComplete = true;  // We already checked HQ scaled frames.
   if (!frameRef) {
+    // There's no HQ scaled frame available, so we'll have to use the frame
+    // provided by the caller.
     frameRef = Move(aFrameRef);
+    frameIsComplete = frameRef->IsImageComplete();
   }
 
   // By now we may have a frame with the requested size. If not, we need to
   // adjust the drawing parameters accordingly.
   IntSize finalSize = frameRef->GetImageSize();
+  bool couldRedecodeForBetterFrame = false;
   if (ThebesIntSize(finalSize) != aSize) {
     gfx::Size scale(double(aSize.width) / finalSize.width,
                     double(aSize.height) / finalSize.height);
     aContext->Multiply(gfxMatrix::Scaling(scale.width, scale.height));
     region.Scale(1.0 / scale.width, 1.0 / scale.height);
+
+    couldRedecodeForBetterFrame = mDownscaleDuringDecode &&
+                                  CanDownscaleDuringDecode(aSize, aFlags);
   }
 
   if (!frameRef->Draw(aContext, region, aFilter, aFlags)) {
     RecoverFromLossOfFrames(aSize, aFlags);
+    return DrawResult::TEMPORARY_ERROR;
   }
+  if (!frameIsComplete) {
+    return DrawResult::INCOMPLETE;
+  }
+  if (couldRedecodeForBetterFrame) {
+    return DrawResult::WRONG_SIZE;
+  }
+  return DrawResult::SUCCESS;
 }
 
 //******************************************************************************
@@ -1757,7 +1773,7 @@ RasterImage::DrawWithPreDownscaleIfNeeded(DrawableFrameRef&& aFrameRef,
  *                      [const] in SVGImageContext aSVGContext,
  *                      in uint32_t aWhichFrame,
  *                      in uint32_t aFlags); */
-NS_IMETHODIMP
+NS_IMETHODIMP_(DrawResult)
 RasterImage::Draw(gfxContext* aContext,
                   const nsIntSize& aSize,
                   const ImageRegion& aRegion,
@@ -1767,18 +1783,20 @@ RasterImage::Draw(gfxContext* aContext,
                   uint32_t aFlags)
 {
   if (aWhichFrame > FRAME_MAX_VALUE)
-    return NS_ERROR_INVALID_ARG;
+    return DrawResult::BAD_ARGS;
 
   if (mError)
-    return NS_ERROR_FAILURE;
+    return DrawResult::BAD_IMAGE;
 
   // Illegal -- you can't draw with non-default decode flags.
   // (Disabling colorspace conversion might make sense to allow, but
   // we don't currently.)
   if (DecodeFlags(aFlags) != DECODE_FLAGS_DEFAULT)
-    return NS_ERROR_FAILURE;
+    return DrawResult::BAD_ARGS;
 
-  NS_ENSURE_ARG_POINTER(aContext);
+  if (!aContext) {
+    return DrawResult::BAD_ARGS;
+  }
 
   if (IsUnlocked() && mProgressTracker) {
     mProgressTracker->OnUnlockedDraw();
@@ -1797,14 +1815,14 @@ RasterImage::Draw(gfxContext* aContext,
     if (mDrawStartTime.IsNull()) {
       mDrawStartTime = TimeStamp::Now();
     }
-    return NS_OK;
+    return DrawResult::NOT_READY;
   }
 
   bool shouldRecordTelemetry = !mDrawStartTime.IsNull() &&
                                ref->IsImageComplete();
 
-  DrawWithPreDownscaleIfNeeded(Move(ref), aContext, aSize,
-                               aRegion, aFilter, flags);
+  auto result = DrawWithPreDownscaleIfNeeded(Move(ref), aContext, aSize,
+                                             aRegion, aFilter, flags);
 
   if (shouldRecordTelemetry) {
       TimeDuration drawLatency = TimeStamp::Now() - mDrawStartTime;
@@ -1813,7 +1831,7 @@ RasterImage::Draw(gfxContext* aContext,
       mDrawStartTime = TimeStamp();
   }
 
-  return NS_OK;
+  return result;
 }
 
 //******************************************************************************
@@ -1848,8 +1866,8 @@ RasterImage::UnlockImage()
     return NS_ERROR_FAILURE;
 
   // It's an error to call this function if the lock count is 0
-  NS_ABORT_IF_FALSE(mLockCount > 0,
-                    "Calling UnlockImage with mLockCount == 0!");
+  MOZ_ASSERT(mLockCount > 0,
+             "Calling UnlockImage with mLockCount == 0!");
   if (mLockCount == 0)
     return NS_ERROR_ABORT;
 

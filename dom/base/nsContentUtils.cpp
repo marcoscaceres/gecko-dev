@@ -3960,7 +3960,7 @@ nsContentUtils::GetListenerManagerForNode(nsINode *aNode)
 
   EventListenerManagerMapEntry *entry =
     static_cast<EventListenerManagerMapEntry *>
-               (PL_DHashTableAdd(&sEventListenerManagersHash, aNode));
+      (PL_DHashTableAdd(&sEventListenerManagersHash, aNode, fallible));
 
   if (!entry) {
     return nullptr;
@@ -4273,7 +4273,7 @@ nsContentUtils::ParseFragmentXML(const nsAString& aSourceBuffer,
     // sXMLFragmentSink now owns the sink
   }
   nsCOMPtr<nsIContentSink> contentsink = do_QueryInterface(sXMLFragmentSink);
-  NS_ABORT_IF_FALSE(contentsink, "Sink doesn't QI to nsIContentSink!");
+  MOZ_ASSERT(contentsink, "Sink doesn't QI to nsIContentSink!");
   sXMLFragmentParser->SetContentSink(contentsink);
 
   sXMLFragmentSink->SetTargetDocument(aDocument);
@@ -7095,8 +7095,7 @@ nsContentUtils::CallOnAllRemoteChildren(nsIMessageBroadcaster* aManager,
      static_cast<nsFrameMessageManager*>(tabMM.get())->GetCallback();
     if (cb) {
       nsFrameLoader* fl = static_cast<nsFrameLoader*>(cb);
-      PBrowserParent* remoteBrowser = fl->GetRemoteBrowser();
-      TabParent* remote = static_cast<TabParent*>(remoteBrowser);
+      TabParent* remote = TabParent::GetFrom(fl);
       if (remote && aCallback) {
         aCallback(remote, aArg);
       }

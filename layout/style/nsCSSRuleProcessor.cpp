@@ -573,7 +573,7 @@ void RuleHash::AppendRuleToTable(PLDHashTable* aTable, const void* aKey,
 {
   // Get a new or existing entry.
   RuleHashTableEntry *entry = static_cast<RuleHashTableEntry*>
-                                         (PL_DHashTableAdd(aTable, aKey));
+    (PL_DHashTableAdd(aTable, aKey, fallible));
   if (!entry)
     return;
   entry->mRules.AppendElement(RuleValue(aRuleInfo, mRuleCount++, mQuirksMode));
@@ -585,7 +585,7 @@ AppendRuleToTagTable(PLDHashTable* aTable, nsIAtom* aKey,
 {
   // Get a new or exisiting entry
   RuleHashTagTableEntry *entry = static_cast<RuleHashTagTableEntry*>
-    (PL_DHashTableAdd(aTable, aKey));
+    (PL_DHashTableAdd(aTable, aKey, fallible));
   if (!entry)
     return;
 
@@ -676,7 +676,7 @@ void RuleHash::EnumerateAllRules(Element* aElement, ElementDependentRuleProcesso
   nsIAtom* id = aElement->GetID();
   const nsAttrValue* classList = aElement->GetClasses();
 
-  NS_ABORT_IF_FALSE(tag, "How could we not have a tag?");
+  MOZ_ASSERT(tag, "How could we not have a tag?");
 
   int32_t classCount = classList ? classList->GetAtomCount() : 0;
 
@@ -1041,7 +1041,7 @@ RuleCascadeData::AttributeListFor(nsIAtom* aAttribute)
 {
   AtomSelectorEntry *entry =
     static_cast<AtomSelectorEntry*>
-               (PL_DHashTableAdd(&mAttributeSelectors, aAttribute));
+               (PL_DHashTableAdd(&mAttributeSelectors, aAttribute, fallible));
   if (!entry)
     return nullptr;
   return &entry->mSelectors;
@@ -1339,7 +1339,7 @@ nsCSSRuleProcessor::GetContentStateForVisitedHandling(
 {
   EventStates contentState = GetContentState(aElement, aTreeMatchContext);
   if (contentState.HasAtLeastOneOfStates(NS_EVENT_STATE_VISITED | NS_EVENT_STATE_UNVISITED)) {
-    NS_ABORT_IF_FALSE(IsLink(aElement), "IsLink() should match state");
+    MOZ_ASSERT(IsLink(aElement), "IsLink() should match state");
     contentState &= ~(NS_EVENT_STATE_VISITED | NS_EVENT_STATE_UNVISITED);
     if (aIsRelevantLink) {
       switch (aVisitedHandling) {
@@ -1756,11 +1756,11 @@ static bool SelectorMatches(Element* aElement,
 {
   NS_PRECONDITION(!aSelector->IsPseudoElement(),
                   "Pseudo-element snuck into SelectorMatches?");
-  NS_ABORT_IF_FALSE(aTreeMatchContext.mForStyling ||
-                    !aNodeMatchContext.mIsRelevantLink,
-                    "mIsRelevantLink should be set to false when mForStyling "
-                    "is false since we don't know how to set it correctly in "
-                    "Has(Attribute|State)DependentStyle");
+  MOZ_ASSERT(aTreeMatchContext.mForStyling ||
+             !aNodeMatchContext.mIsRelevantLink,
+             "mIsRelevantLink should be set to false when mForStyling "
+             "is false since we don't know how to set it correctly in "
+             "Has(Attribute|State)DependentStyle");
 
   // namespace/tag match
   // optimization : bail out early if we can
@@ -1965,8 +1965,8 @@ static bool SelectorMatches(Element* aElement,
           nsCSSSelectorList *l;
           for (l = pseudoClass->u.mSelectors; l; l = l->mNext) {
             nsCSSSelector *s = l->mSelectors;
-            NS_ABORT_IF_FALSE(!s->mNext && !s->IsPseudoElement(),
-                              "parser failed");
+            MOZ_ASSERT(!s->mNext && !s->IsPseudoElement(),
+                       "parser failed");
             if (SelectorMatches(
                   aElement, s, aNodeMatchContext, aTreeMatchContext,
                   SelectorMatchesFlags::IS_PSEUDO_CLASS_ARGUMENT)) {
@@ -2236,7 +2236,7 @@ static bool SelectorMatches(Element* aElement,
         break;
 
       default:
-        NS_ABORT_IF_FALSE(false, "How did that happen?");
+        MOZ_ASSERT(false, "How did that happen?");
       }
     } else {
       if (!StateSelectorMatches(aElement, aSelector, aNodeMatchContext,
@@ -3134,9 +3134,8 @@ AddSelector(RuleCascadeData* aCascade,
     if (negation == aSelectorInTopLevel) {
       for (nsAtomList* curID = negation->mIDList; curID;
            curID = curID->mNext) {
-        AtomSelectorEntry *entry =
-          static_cast<AtomSelectorEntry*>(PL_DHashTableAdd(&aCascade->mIdSelectors,
-                                                           curID->mAtom));
+        AtomSelectorEntry *entry = static_cast<AtomSelectorEntry*>
+          (PL_DHashTableAdd(&aCascade->mIdSelectors, curID->mAtom, fallible));
         if (entry) {
           entry->mSelectors.AppendElement(aSelectorInTopLevel);
         }
@@ -3149,9 +3148,9 @@ AddSelector(RuleCascadeData* aCascade,
     if (negation == aSelectorInTopLevel) {
       for (nsAtomList* curClass = negation->mClassList; curClass;
            curClass = curClass->mNext) {
-        AtomSelectorEntry *entry =
-          static_cast<AtomSelectorEntry*>(PL_DHashTableAdd(&aCascade->mClassSelectors,
-                                                           curClass->mAtom));
+        AtomSelectorEntry *entry = static_cast<AtomSelectorEntry*>
+          (PL_DHashTableAdd(&aCascade->mClassSelectors, curClass->mAtom,
+                            fallible));
         if (entry) {
           entry->mSelectors.AppendElement(aSelectorInTopLevel);
         }
@@ -3410,7 +3409,8 @@ CascadeRuleEnumFunc(css::Rule* aRule, void* aData)
          sel; sel = sel->mNext) {
       int32_t weight = sel->mWeight;
       RuleByWeightEntry *entry = static_cast<RuleByWeightEntry*>(
-        PL_DHashTableAdd(&data->mRulesByWeight, NS_INT32_TO_PTR(weight)));
+        PL_DHashTableAdd(&data->mRulesByWeight, NS_INT32_TO_PTR(weight),
+                         fallible));
       if (!entry)
         return false;
       entry->data.mWeight = weight;

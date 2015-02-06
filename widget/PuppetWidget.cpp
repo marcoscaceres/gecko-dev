@@ -39,8 +39,8 @@ InvalidateRegion(nsIWidget* aWidget, const nsIntRegion& aRegion)
 /*static*/ already_AddRefed<nsIWidget>
 nsIWidget::CreatePuppetWidget(TabChild* aTabChild)
 {
-  NS_ABORT_IF_FALSE(!aTabChild || nsIWidget::UsePuppetWidgets(),
-                    "PuppetWidgets not allowed in this configuration");
+  MOZ_ASSERT(!aTabChild || nsIWidget::UsePuppetWidgets(),
+             "PuppetWidgets not allowed in this configuration");
 
   nsCOMPtr<nsIWidget> widget = new PuppetWidget(aTabChild);
   return widget.forget();
@@ -99,7 +99,7 @@ PuppetWidget::Create(nsIWidget        *aParent,
                      nsDeviceContext *aContext,
                      nsWidgetInitData *aInitData)
 {
-  NS_ABORT_IF_FALSE(!aNativeParent, "got a non-Puppet native parent");
+  MOZ_ASSERT(!aNativeParent, "got a non-Puppet native parent");
 
   BaseCreate(nullptr, aRect, aContext, aInitData);
 
@@ -294,8 +294,8 @@ PuppetWidget::DispatchEvent(WidgetGUIEvent* event, nsEventStatus& aStatus)
                   nsAutoCString("PuppetWidget"), 0);
 #endif
 
-  NS_ABORT_IF_FALSE(!mChild || mChild->mWindowType == eWindowType_popup,
-                    "Unexpected event dispatch!");
+  MOZ_ASSERT(!mChild || mChild->mWindowType == eWindowType_popup,
+             "Unexpected event dispatch!");
 
   AutoCacheNativeKeyCommands autoCache(this);
   if (event->mFlags.mIsSynthesizedForTests && !mNativeKeyCommandsValid) {
@@ -550,13 +550,13 @@ PuppetWidget::NotifyIMEOfUpdateComposition()
 
   uint32_t startOffset;
   uint32_t targetCauseOffset;
-  nsAutoTArray<nsIntRect, 16> textRectArray;
+  nsAutoTArray<LayoutDeviceIntRect, 16> textRectArray;
   if (!GetCompositionRects(startOffset,
                            textRectArray,
                            targetCauseOffset)) {
     return NS_ERROR_FAILURE;
   }
-  nsIntRect caretRect;
+  LayoutDeviceIntRect caretRect;
   GetCaretRect(caretRect, targetCauseOffset);
 
   mTabChild->SendNotifyIMESelectedCompositionRect(startOffset,
@@ -568,7 +568,7 @@ PuppetWidget::NotifyIMEOfUpdateComposition()
 
 bool
 PuppetWidget::GetCompositionRects(uint32_t& aStartOffset,
-                                  nsTArray<nsIntRect>& aTextRectArray,
+                                  nsTArray<LayoutDeviceIntRect>& aTextRectArray,
                                   uint32_t& aTargetCauseOffset)
 {
   nsRefPtr<TextComposition> textComposition =
@@ -605,7 +605,7 @@ PuppetWidget::GetCaretOffset()
 }
 
 bool
-PuppetWidget::GetCaretRect(nsIntRect& aCaretRect, uint32_t aCaretOffset)
+PuppetWidget::GetCaretRect(LayoutDeviceIntRect& aCaretRect, uint32_t aCaretOffset)
 {
   nsEventStatus status;
   WidgetQueryContentEvent caretRect(true, NS_QUERY_CARET_RECT, this);
@@ -629,7 +629,7 @@ PuppetWidget::NotifyIMEOfEditorRect()
     return NS_ERROR_FAILURE;
   }
 
-  nsIntRect rect;
+  LayoutDeviceIntRect rect;
   if (!GetEditorRect(rect)) {
     return NS_ERROR_FAILURE;
   }
@@ -638,7 +638,7 @@ PuppetWidget::NotifyIMEOfEditorRect()
 }
 
 bool
-PuppetWidget::GetEditorRect(nsIntRect& aRect)
+PuppetWidget::GetEditorRect(LayoutDeviceIntRect& aRect)
 {
   nsEventStatus status;
   WidgetQueryContentEvent editorRectEvent(true, NS_QUERY_EDITOR_RECT, this);
@@ -761,14 +761,14 @@ PuppetWidget::NotifyIMEOfPositionChange()
     return NS_ERROR_FAILURE;
   }
 
-  nsIntRect editorRect;
+  LayoutDeviceIntRect editorRect;
   if (!GetEditorRect(editorRect)) {
     return NS_ERROR_FAILURE;
   }
 
   uint32_t startOffset;
   uint32_t targetCauseOffset;
-  nsAutoTArray<nsIntRect, 16> textRectArray;
+  nsAutoTArray<LayoutDeviceIntRect, 16> textRectArray;
   if (!GetCompositionRects(startOffset,
                            textRectArray,
                            targetCauseOffset)) {
@@ -776,7 +776,7 @@ PuppetWidget::NotifyIMEOfPositionChange()
     targetCauseOffset = GetCaretOffset();
   }
 
-  nsIntRect caretRect;
+  LayoutDeviceIntRect caretRect;
   GetCaretRect(caretRect, targetCauseOffset);
   if (!mTabChild->SendNotifyIMEPositionChange(editorRect, textRectArray,
                                               caretRect)) {
@@ -806,7 +806,7 @@ PuppetWidget::SetCursor(nsCursor aCursor)
 nsresult
 PuppetWidget::Paint()
 {
-  NS_ABORT_IF_FALSE(!mDirtyRegion.IsEmpty(), "paint event logic messed up");
+  MOZ_ASSERT(!mDirtyRegion.IsEmpty(), "paint event logic messed up");
 
   if (!mAttachedWidgetListener)
     return NS_OK;
@@ -855,9 +855,9 @@ PuppetWidget::Paint()
 void
 PuppetWidget::SetChild(PuppetWidget* aChild)
 {
-  NS_ABORT_IF_FALSE(this != aChild, "can't parent a widget to itself");
-  NS_ABORT_IF_FALSE(!aChild->mChild,
-                    "fake widget 'hierarchy' only expected to have one level");
+  MOZ_ASSERT(this != aChild, "can't parent a widget to itself");
+  MOZ_ASSERT(!aChild->mChild,
+             "fake widget 'hierarchy' only expected to have one level");
 
   mChild = aChild;
 }
@@ -918,7 +918,7 @@ PuppetWidget::GetNativeData(uint32_t aDataType)
 {
   switch (aDataType) {
   case NS_NATIVE_SHAREABLE_WINDOW: {
-    NS_ABORT_IF_FALSE(mTabChild, "Need TabChild to get the nativeWindow from!");
+    MOZ_ASSERT(mTabChild, "Need TabChild to get the nativeWindow from!");
     mozilla::WindowsHandle nativeData = 0;
     if (mTabChild) {
       mTabChild->SendGetWidgetNativeData(&nativeData);

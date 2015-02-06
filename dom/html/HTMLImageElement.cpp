@@ -207,6 +207,10 @@ HTMLImageElement::Complete()
     return true;
   }
 
+  if (mPendingRequest) {
+    return false;
+  }
+
   uint32_t status;
   mCurrentRequest->GetImageStatus(&status);
   return
@@ -397,8 +401,8 @@ HTMLImageElement::AfterSetAttr(int32_t aNameSpaceID, nsIAtom* aName,
       (aName == nsGkAtoms::name || aName == nsGkAtoms::id) &&
       aValue && !aValue->IsEmptyString()) {
     // add the image to the hashtable as needed
-    NS_ABORT_IF_FALSE(aValue->Type() == nsAttrValue::eAtom,
-      "Expected atom value for name/id");
+    MOZ_ASSERT(aValue->Type() == nsAttrValue::eAtom,
+               "Expected atom value for name/id");
     mForm->AddImageElementToTable(this,
       nsDependentAtomString(aValue->GetAtomValue()));
   }

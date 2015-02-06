@@ -1716,9 +1716,9 @@ CanvasToDataSourceSurface(nsIDOMHTMLCanvasElement* aCanvas)
     return nullptr;
   }
 
-  NS_ABORT_IF_FALSE(node->IsElement(),
-                    "An nsINode that implements nsIDOMHTMLCanvasElement should "
-                    "be an element.");
+  MOZ_ASSERT(node->IsElement(),
+             "An nsINode that implements nsIDOMHTMLCanvasElement should "
+             "be an element.");
   nsLayoutUtils::SurfaceFromElementResult result =
     nsLayoutUtils::SurfaceFromElement(node->AsElement());
   return result.mSourceSurface->GetDataSurface();
@@ -2195,8 +2195,7 @@ nsDOMWindowUtils::SendQueryContentEvent(uint32_t aType,
     }
   }
 
-  pt += LayoutDeviceIntPoint::FromUntyped(
-    widget->WidgetToScreenOffset() - targetWidget->WidgetToScreenOffset());
+  pt += widget->WidgetToScreenOffset() - targetWidget->WidgetToScreenOffset();
 
   WidgetQueryContentEvent queryEvent(true, aType, targetWidget);
   InitEvent(queryEvent, &pt);
@@ -2310,7 +2309,7 @@ nsDOMWindowUtils::GetClassName(JS::Handle<JS::Value> aObject, JSContext* aCx,
   }
 
   *aName = NS_strdup(JS_GetClass(aObject.toObjectOrNull())->name);
-  NS_ABORT_IF_FALSE(*aName, "NS_strdup should be infallible.");
+  MOZ_ASSERT(*aName, "NS_strdup should be infallible.");
   return NS_OK;
 }
 
@@ -2699,9 +2698,9 @@ nsDOMWindowUtils::ComputeAnimationDistance(nsIDOMElement* aElement,
     property = eCSSProperty_UNKNOWN;
   }
 
-  NS_ABORT_IF_FALSE(property == eCSSProperty_UNKNOWN ||
-                    !nsCSSProps::IsShorthand(property),
-                    "should not have shorthand");
+  MOZ_ASSERT(property == eCSSProperty_UNKNOWN ||
+             !nsCSSProps::IsShorthand(property),
+             "should not have shorthand");
 
   StyleAnimationValue v1, v2;
   if (property == eCSSProperty_UNKNOWN ||

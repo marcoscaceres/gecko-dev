@@ -746,15 +746,27 @@ private:
     }
 };
 
+namespace {
 StaticRefPtr<TabChild> sPreallocatedTab;
 
-/*static*/
 std::map<TabId, nsRefPtr<TabChild>>&
-TabChild::NestedTabChildMap()
+NestedTabChildMap()
 {
   MOZ_ASSERT(NS_IsMainThread());
   static std::map<TabId, nsRefPtr<TabChild>> sNestedTabChildMap;
   return sNestedTabChildMap;
+}
+} // anonymous namespace
+
+already_AddRefed<TabChild>
+TabChild::FindTabChild(const TabId& aTabId)
+{
+  auto iter = NestedTabChildMap().find(aTabId);
+  if (iter == NestedTabChildMap().end()) {
+    return nullptr;
+  }
+  nsRefPtr<TabChild> tabChild = iter->second;
+  return tabChild.forget();
 }
 
 /*static*/ void
@@ -3161,8 +3173,8 @@ TabChild::InitRenderingState(const ScrollingBehavior& aScrolling,
     ShadowLayerForwarder* lf =
         mWidget->GetLayerManager(shadowManager, mTextureFactoryIdentifier.mParentBackend)
                ->AsShadowForwarder();
-    NS_ABORT_IF_FALSE(lf && lf->HasShadowManager(),
-                      "PuppetWidget should have shadow manager");
+    MOZ_ASSERT(lf && lf->HasShadowManager(),
+               "PuppetWidget should have shadow manager");
     lf->IdentifyTextureHost(mTextureFactoryIdentifier);
     ImageBridgeChild::IdentifyCompositorTextureHost(mTextureFactoryIdentifier);
 
@@ -3328,6 +3340,15 @@ TabChild::GetTabId(uint64_t* aId)
 {
   *aId = GetTabId();
   return NS_OK;
+}
+
+void
+TabChild::SetTabId(const TabId& aTabId)
+{
+  MOZ_ASSERT(mUniqueId == 0);
+
+  mUniqueId = aTabId;
+  NestedTabChildMap()[mUniqueId] = this;
 }
 
 bool

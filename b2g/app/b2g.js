@@ -319,7 +319,7 @@ pref("media.fragmented-mp4.gonk.enabled", true);
 pref("media.video-queue.default-size", 3);
 
 // optimize images' memory usage
-pref("image.mem.decodeondraw", false);
+pref("image.mem.decodeondraw", true);
 pref("image.mem.allow_locking_in_content_processes", false); /* don't allow image locking */
 // Limit the surface cache to 1/8 of main memory or 128MB, whichever is smaller.
 // Almost everything that was factored into 'max_decoded_image_kb' is now stored
@@ -728,22 +728,30 @@ pref("hal.processPriorityManager.gonk.BACKGROUND.KillUnderKB", 20480);
 pref("hal.processPriorityManager.gonk.BACKGROUND.cgroup", "apps/bg_non_interactive");
 
 // Control group definitions (i.e., CPU priority groups) for B2G processes.
+//
+// memory_swappiness -   0 - The kernel will swap only to avoid an out of memory condition
+// memory_swappiness -  60 - The default value.
+// memory_swappiness - 100 - The kernel will swap aggressively.
 
 // Foreground apps
 pref("hal.processPriorityManager.gonk.cgroups.apps.cpu_shares", 1024);
 pref("hal.processPriorityManager.gonk.cgroups.apps.cpu_notify_on_migrate", 0);
+pref("hal.processPriorityManager.gonk.cgroups.apps.memory_swappiness", 10);
 
 // Foreground apps with high priority, 16x more CPU than foreground ones
 pref("hal.processPriorityManager.gonk.cgroups.apps/critical.cpu_shares", 16384);
 pref("hal.processPriorityManager.gonk.cgroups.apps/critical.cpu_notify_on_migrate", 0);
+pref("hal.processPriorityManager.gonk.cgroups.apps/critical.memory_swappiness", 0);
 
 // Background perceivable apps, ~10x less CPU than foreground ones
 pref("hal.processPriorityManager.gonk.cgroups.apps/bg_perceivable.cpu_shares", 103);
 pref("hal.processPriorityManager.gonk.cgroups.apps/bg_perceivable.cpu_notify_on_migrate", 0);
+pref("hal.processPriorityManager.gonk.cgroups.apps/bg_perceivable.memory_swappiness", 60);
 
 // Background apps, ~20x less CPU than foreground ones and ~2x less than perceivable ones
 pref("hal.processPriorityManager.gonk.cgroups.apps/bg_non_interactive.cpu_shares", 52);
 pref("hal.processPriorityManager.gonk.cgroups.apps/bg_non_interactive.cpu_notify_on_migrate", 0);
+pref("hal.processPriorityManager.gonk.cgroups.apps/bg_non_interactive.memory_swappiness", 100);
 
 // By default the compositor thread on gonk runs without real-time priority.  RT
 // priority can be enabled by setting this pref to a value between 1 and 99.

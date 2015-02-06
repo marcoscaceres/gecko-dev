@@ -97,9 +97,9 @@ using namespace mozilla::ipc;
 #define DISABLE_ASSERTS_FOR_FUZZING 0
 
 #if DISABLE_ASSERTS_FOR_FUZZING
-#define ASSERT_UNLESS_FUZZING(...) do { } while (0)
+#define ASSERT_UNLESS_FUZZING() do { } while (0)
 #else
-#define ASSERT_UNLESS_FUZZING(...) MOZ_ASSERT(false, __VA_ARGS__)
+#define ASSERT_UNLESS_FUZZING() MOZ_ASSERT(false)
 #endif
 
 namespace {
@@ -10987,7 +10987,7 @@ FactoryOp::CheckAtLeastOneAppHasPermission(ContentParent* aContentParent,
          index < count;
          index++) {
       uint32_t appId =
-        static_cast<TabParent*>(browsers[index])->OwnOrContainingAppId();
+        TabParent::GetFrom(browsers[index])->OwnOrContainingAppId();
       MOZ_ASSERT(kUnknownAppId != appId && kNoAppId != appId);
 
       nsCOMPtr<mozIApplication> app;

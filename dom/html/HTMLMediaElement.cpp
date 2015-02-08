@@ -275,7 +275,7 @@ public:
     : mElement(aElement),
       mLoadID(aElement->GetCurrentLoadID())
   {
-    MOZ_ASSERT(mElement, "Must pass an element to call back");
+    NS_ABORT_IF_FALSE(mElement, "Must pass an element to call back");
   }
 
 private:
@@ -3252,7 +3252,10 @@ void HTMLMediaElement::CheckProgress(bool aHaveNewProgress)
 
   if (now - mDataTime >= TimeDuration::FromMilliseconds(STALL_MS)) {
     DispatchAsyncEvent(NS_LITERAL_STRING("stalled"));
-    ChangeDelayLoadStatus(false);
+
+    if (IsMediaSourceURI(mLoadingSrc)) {
+      ChangeDelayLoadStatus(false);
+    }
 
     NS_ASSERTION(mProgressTimer, "detected stalled without timer");
     // Stop timer events, which prevents repeated stalled events until there

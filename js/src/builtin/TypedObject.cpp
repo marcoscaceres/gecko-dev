@@ -1495,7 +1495,9 @@ OutlineTypedObject::createUnattachedWithClass(JSContext *cx,
     MOZ_ASSERT(clasp == &OutlineTransparentTypedObject::class_ ||
                clasp == &OutlineOpaqueTypedObject::class_);
 
-    RootedObjectGroup group(cx, cx->getNewGroup(clasp, TaggedProto(&descr->typedProto()), descr));
+    RootedObjectGroup group(cx, ObjectGroup::defaultNewGroup(cx, clasp,
+                                                             TaggedProto(&descr->typedProto()),
+                                                             descr));
     if (!group)
         return nullptr;
 
@@ -2090,7 +2092,7 @@ TypedObject::obj_enumerate(JSContext *cx, HandleObject obj, AutoIdVector &proper
             return false;
 
         for (int32_t index = 0; index < typedObj->length(); index++) {
-            id.set(INT_TO_JSID(index));
+            id = INT_TO_JSID(index);
             properties.infallibleAppend(id);
         }
         break;
@@ -2102,7 +2104,7 @@ TypedObject::obj_enumerate(JSContext *cx, HandleObject obj, AutoIdVector &proper
             return false;
 
         for (size_t index = 0; index < fieldCount; index++) {
-            id.set(AtomToId(&descr->as<StructTypeDescr>().fieldName(index)));
+            id = AtomToId(&descr->as<StructTypeDescr>().fieldName(index));
             properties.infallibleAppend(id);
         }
         break;
@@ -2131,7 +2133,9 @@ InlineTypedObject::create(JSContext *cx, HandleTypeDescr descr, gc::InitialHeap 
                          ? &InlineOpaqueTypedObject::class_
                          : &InlineTransparentTypedObject::class_;
 
-    RootedObjectGroup group(cx, cx->getNewGroup(clasp, TaggedProto(&descr->typedProto()), descr));
+    RootedObjectGroup group(cx, ObjectGroup::defaultNewGroup(cx, clasp,
+                                                             TaggedProto(&descr->typedProto()),
+                                                             descr));
     if (!group)
         return nullptr;
 

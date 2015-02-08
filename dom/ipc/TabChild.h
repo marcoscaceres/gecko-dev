@@ -321,7 +321,8 @@ public:
                           const ScrollingBehavior& aScrolling,
                           const TextureFactoryIdentifier& aTextureFactoryIdentifier,
                           const uint64_t& aLayersId,
-                          PRenderFrameChild* aRenderFrame) MOZ_OVERRIDE;
+                          PRenderFrameChild* aRenderFrame,
+                          const bool& aParentIsActive) MOZ_OVERRIDE;
     virtual bool RecvUpdateDimensions(const nsIntRect& rect,
                                       const nsIntSize& size,
                                       const ScreenOrientation& orientation,
@@ -494,11 +495,16 @@ public:
      */
     PPluginWidgetChild* AllocPPluginWidgetChild() MOZ_OVERRIDE;
     bool DeallocPPluginWidgetChild(PPluginWidgetChild* aActor) MOZ_OVERRIDE;
-    already_AddRefed<nsIWidget> CreatePluginWidget(nsIWidget* aParent);
+    nsresult CreatePluginWidget(nsIWidget* aParent, nsIWidget** aOut);
 
     nsIntPoint GetChromeDisplacement() { return mChromeDisp; };
 
     bool IPCOpen() { return mIPCOpen; }
+
+    bool ParentIsActive()
+    {
+      return mParentIsActive;
+    }
 
 protected:
     virtual ~TabChild();
@@ -665,6 +671,7 @@ private:
     float mDPI;
     double mDefaultScale;
     bool mIPCOpen;
+    bool mParentIsActive;
 
     DISALLOW_EVIL_CONSTRUCTORS(TabChild);
 };

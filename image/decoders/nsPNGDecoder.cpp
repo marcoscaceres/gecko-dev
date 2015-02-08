@@ -15,6 +15,7 @@
 #include "nspr.h"
 #include "png.h"
 #include "RasterImage.h"
+#include "mozilla/Telemetry.h"
 
 #include <algorithm>
 
@@ -315,7 +316,7 @@ nsPNGDecoder::InitInternal()
 void
 nsPNGDecoder::WriteInternal(const char* aBuffer, uint32_t aCount)
 {
-  MOZ_ASSERT(!HasError(), "Shouldn't call WriteInternal after error!");
+  NS_ABORT_IF_FALSE(!HasError(), "Shouldn't call WriteInternal after error!");
 
   // If we only want width/height, we don't need to go through libpng
   if (IsSizeDecode()) {
@@ -872,7 +873,7 @@ nsPNGDecoder::end_callback(png_structp png_ptr, png_infop info_ptr)
                static_cast<nsPNGDecoder*>(png_get_progressive_ptr(png_ptr));
 
   // We shouldn't get here if we've hit an error
-  MOZ_ASSERT(!decoder->HasError(), "Finishing up PNG but hit error!");
+  NS_ABORT_IF_FALSE(!decoder->HasError(), "Finishing up PNG but hit error!");
 
   int32_t loop_count = 0;
 #ifdef PNG_APNG_SUPPORTED

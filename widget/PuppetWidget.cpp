@@ -39,8 +39,8 @@ InvalidateRegion(nsIWidget* aWidget, const nsIntRegion& aRegion)
 /*static*/ already_AddRefed<nsIWidget>
 nsIWidget::CreatePuppetWidget(TabChild* aTabChild)
 {
-  MOZ_ASSERT(!aTabChild || nsIWidget::UsePuppetWidgets(),
-             "PuppetWidgets not allowed in this configuration");
+  NS_ABORT_IF_FALSE(!aTabChild || nsIWidget::UsePuppetWidgets(),
+                    "PuppetWidgets not allowed in this configuration");
 
   nsCOMPtr<nsIWidget> widget = new PuppetWidget(aTabChild);
   return widget.forget();
@@ -96,12 +96,11 @@ NS_IMETHODIMP
 PuppetWidget::Create(nsIWidget        *aParent,
                      nsNativeWidget   aNativeParent,
                      const nsIntRect  &aRect,
-                     nsDeviceContext *aContext,
                      nsWidgetInitData *aInitData)
 {
-  MOZ_ASSERT(!aNativeParent, "got a non-Puppet native parent");
+  NS_ABORT_IF_FALSE(!aNativeParent, "got a non-Puppet native parent");
 
-  BaseCreate(nullptr, aRect, aContext, aInitData);
+  BaseCreate(nullptr, aRect, aInitData);
 
   mBounds = aRect;
   mEnabled = true;
@@ -139,7 +138,6 @@ PuppetWidget::InitIMEState()
 
 already_AddRefed<nsIWidget>
 PuppetWidget::CreateChild(const nsIntRect  &aRect,
-                          nsDeviceContext *aContext,
                           nsWidgetInitData *aInitData,
                           bool             aForceUseIWidgetParent)
 {
@@ -147,7 +145,7 @@ PuppetWidget::CreateChild(const nsIntRect  &aRect,
   nsCOMPtr<nsIWidget> widget = nsIWidget::CreatePuppetWidget(mTabChild);
   return ((widget &&
            NS_SUCCEEDED(widget->Create(isPopup ? nullptr: this, nullptr, aRect,
-                                       aContext, aInitData))) ?
+                                       aInitData))) ?
           widget.forget() : nullptr);
 }
 
@@ -294,8 +292,8 @@ PuppetWidget::DispatchEvent(WidgetGUIEvent* event, nsEventStatus& aStatus)
                   nsAutoCString("PuppetWidget"), 0);
 #endif
 
-  MOZ_ASSERT(!mChild || mChild->mWindowType == eWindowType_popup,
-             "Unexpected event dispatch!");
+  NS_ABORT_IF_FALSE(!mChild || mChild->mWindowType == eWindowType_popup,
+                    "Unexpected event dispatch!");
 
   AutoCacheNativeKeyCommands autoCache(this);
   if (event->mFlags.mIsSynthesizedForTests && !mNativeKeyCommandsValid) {
@@ -806,7 +804,7 @@ PuppetWidget::SetCursor(nsCursor aCursor)
 nsresult
 PuppetWidget::Paint()
 {
-  MOZ_ASSERT(!mDirtyRegion.IsEmpty(), "paint event logic messed up");
+  NS_ABORT_IF_FALSE(!mDirtyRegion.IsEmpty(), "paint event logic messed up");
 
   if (!mAttachedWidgetListener)
     return NS_OK;
@@ -855,9 +853,9 @@ PuppetWidget::Paint()
 void
 PuppetWidget::SetChild(PuppetWidget* aChild)
 {
-  MOZ_ASSERT(this != aChild, "can't parent a widget to itself");
-  MOZ_ASSERT(!aChild->mChild,
-             "fake widget 'hierarchy' only expected to have one level");
+  NS_ABORT_IF_FALSE(this != aChild, "can't parent a widget to itself");
+  NS_ABORT_IF_FALSE(!aChild->mChild,
+                    "fake widget 'hierarchy' only expected to have one level");
 
   mChild = aChild;
 }
@@ -918,7 +916,7 @@ PuppetWidget::GetNativeData(uint32_t aDataType)
 {
   switch (aDataType) {
   case NS_NATIVE_SHAREABLE_WINDOW: {
-    MOZ_ASSERT(mTabChild, "Need TabChild to get the nativeWindow from!");
+    NS_ABORT_IF_FALSE(mTabChild, "Need TabChild to get the nativeWindow from!");
     mozilla::WindowsHandle nativeData = 0;
     if (mTabChild) {
       mTabChild->SendGetWidgetNativeData(&nativeData);

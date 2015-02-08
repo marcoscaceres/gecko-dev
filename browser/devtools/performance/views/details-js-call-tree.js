@@ -8,7 +8,10 @@
  */
 let JsCallTreeView = Heritage.extend(DetailsSubview, {
 
-  rerenderPrefs: ["invert-call-tree", "show-platform-data"],
+  rerenderPrefs: [
+    "invert-call-tree",
+    "show-platform-data"
+  ],
 
   rangeChangeDebounceTime: 50, // ms
 
@@ -105,6 +108,8 @@ let JsCallTreeView = Heritage.extend(DetailsSubview, {
     let contentOnly = !PerformanceController.getPref("show-platform-data");
     root.toggleCategories(!contentOnly);
   },
+
+  toString: () => "[object JsCallTreeView]"
 });
 
 /**

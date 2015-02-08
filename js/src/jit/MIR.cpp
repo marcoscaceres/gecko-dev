@@ -3794,7 +3794,7 @@ MAsmJSLoadHeap::mightAlias(const MDefinition *def) const
 {
     if (def->isAsmJSStoreHeap()) {
         const MAsmJSStoreHeap *store = def->toAsmJSStoreHeap();
-        if (store->viewType() != viewType())
+        if (store->accessType() != accessType())
             return true;
         if (!ptr()->isConstant() || !store->ptr()->isConstant())
             return true;
@@ -3810,7 +3810,7 @@ MAsmJSLoadHeap::congruentTo(const MDefinition *ins) const
     if (!ins->isAsmJSLoadHeap())
         return false;
     const MAsmJSLoadHeap *load = ins->toAsmJSLoadHeap();
-    return load->viewType() == viewType() && congruentIfOperandsEqual(load);
+    return load->accessType() == accessType() && congruentIfOperandsEqual(load);
 }
 
 bool
@@ -4066,7 +4066,7 @@ MLoadTypedArrayElementStatic::congruentTo(const MDefinition *ins) const
         return false;
     if (needsBoundsCheck() != other->needsBoundsCheck())
         return false;
-    if (viewType() != other->viewType())
+    if (accessType() != other->accessType())
         return false;
     if (base() != other->base())
         return false;
@@ -4321,14 +4321,14 @@ bool
 jit::ElementAccessIsPacked(types::CompilerConstraintList *constraints, MDefinition *obj)
 {
     types::TemporaryTypeSet *types = obj->resultTypeSet();
-    return types && !types->hasObjectFlags(constraints, types::OBJECT_FLAG_NON_PACKED);
+    return types && !types->hasObjectFlags(constraints, OBJECT_FLAG_NON_PACKED);
 }
 
 bool
 jit::ElementAccessMightBeCopyOnWrite(types::CompilerConstraintList *constraints, MDefinition *obj)
 {
     types::TemporaryTypeSet *types = obj->resultTypeSet();
-    return !types || types->hasObjectFlags(constraints, types::OBJECT_FLAG_COPY_ON_WRITE);
+    return !types || types->hasObjectFlags(constraints, OBJECT_FLAG_COPY_ON_WRITE);
 }
 
 bool
@@ -4337,7 +4337,7 @@ jit::ElementAccessHasExtraIndexedProperty(types::CompilerConstraintList *constra
 {
     types::TemporaryTypeSet *types = obj->resultTypeSet();
 
-    if (!types || types->hasObjectFlags(constraints, types::OBJECT_FLAG_LENGTH_OVERFLOW))
+    if (!types || types->hasObjectFlags(constraints, OBJECT_FLAG_LENGTH_OVERFLOW))
         return true;
 
     return types::TypeCanHaveExtraIndexedProperties(constraints, types);
@@ -4435,10 +4435,8 @@ jit::PropertyReadNeedsTypeBarrier(JSContext *propertycx,
         JSObject *obj;
         if (key->isSingleton())
             obj = key->singleton();
-        else if (key->hasTenuredProto())
-            obj = key->proto().toObjectOrNull();
         else
-            obj = nullptr;
+            obj = key->proto().toObjectOrNull();
 
         while (obj) {
             if (!obj->getClass()->isNative())
@@ -4462,8 +4460,6 @@ jit::PropertyReadNeedsTypeBarrier(JSContext *propertycx,
                 }
             }
 
-            if (!obj->hasTenuredProto())
-                break;
             obj = obj->getProto();
         }
     }
@@ -4526,7 +4522,7 @@ jit::PropertyReadOnPrototypeNeedsTypeBarrier(types::CompilerConstraintList *cons
         if (!key)
             continue;
         while (true) {
-            if (!key->hasStableClassAndProto(constraints) || !key->hasTenuredProto())
+            if (!key->hasStableClassAndProto(constraints))
                 return BarrierKind::TypeSet;
             if (!key->proto().isObject())
                 break;

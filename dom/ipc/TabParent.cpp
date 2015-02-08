@@ -763,7 +763,7 @@ TabParent::LoadURL(nsIURI* aURI)
 }
 
 void
-TabParent::Show(const nsIntSize& size)
+TabParent::Show(const nsIntSize& size, bool aParentIsActive)
 {
     // sigh
     mShown = true;
@@ -809,7 +809,8 @@ TabParent::Show(const nsIntSize& size)
       info = ShowInfo(name, allowFullscreen, isPrivate, mDPI, mDefaultScale.scale);
     }
 
-    unused << SendShow(size, info, scrolling, textureFactoryIdentifier, layersId, renderFrame);
+    unused << SendShow(size, info, scrolling, textureFactoryIdentifier,
+                       layersId, renderFrame, aParentIsActive);
 }
 
 bool
@@ -1153,9 +1154,7 @@ bool TabParent::SendRealMouseEvent(WidgetMouseEvent& event)
   if (mIsDestroyed) {
     return false;
   }
-  nsEventStatus status = MaybeForwardEventToRenderFrame(event, nullptr, nullptr);
-  if (status == nsEventStatus_eConsumeNoDefault ||
-      !MapEventCoordinatesForChildProcess(&event)) {
+  if (!MapEventCoordinatesForChildProcess(&event)) {
     return false;
   }
   return PBrowserParent::SendRealMouseEvent(event);
@@ -1224,10 +1223,8 @@ bool TabParent::SendMouseWheelEvent(WidgetWheelEvent& event)
 
   ScrollableLayerGuid guid;
   uint64_t blockId;
-  nsEventStatus status = MaybeForwardEventToRenderFrame(event, &guid, &blockId);
-  if (status == nsEventStatus_eConsumeNoDefault ||
-      !MapEventCoordinatesForChildProcess(&event))
-  {
+  ApzAwareEventRoutingToChild(&guid, &blockId);
+  if (!MapEventCoordinatesForChildProcess(&event)) {
     return false;
   }
   return PBrowserParent::SendMouseWheelEvent(event, guid, blockId);
@@ -1279,7 +1276,6 @@ bool TabParent::SendRealKeyEvent(WidgetKeyboardEvent& event)
   if (mIsDestroyed) {
     return false;
   }
-  MaybeForwardEventToRenderFrame(event, nullptr, nullptr);
   if (!MapEventCoordinatesForChildProcess(&event)) {
     return false;
   }
@@ -1348,9 +1344,9 @@ bool TabParent::SendRealTouchEvent(WidgetTouchEvent& event)
 
   ScrollableLayerGuid guid;
   uint64_t blockId;
-  nsEventStatus status = MaybeForwardEventToRenderFrame(event, &guid, &blockId);
+  ApzAwareEventRoutingToChild(&guid, &blockId);
 
-  if (status == nsEventStatus_eConsumeNoDefault || mIsDestroyed) {
+  if (mIsDestroyed) {
     return false;
   }
 
@@ -2186,8 +2182,8 @@ TabParent::RecvGetDPI(float* aValue)
 {
   TryCacheDPIAndScale();
 
-  MOZ_ASSERT(mDPI > 0,
-             "Must not ask for DPI before OwnerElement is received!");
+  NS_ABORT_IF_FALSE(mDPI > 0,
+                    "Must not ask for DPI before OwnerElement is received!");
   *aValue = mDPI;
   return true;
 }
@@ -2197,8 +2193,8 @@ TabParent::RecvGetDefaultScale(double* aValue)
 {
   TryCacheDPIAndScale();
 
-  MOZ_ASSERT(mDefaultScale.scale > 0,
-             "Must not ask for scale before OwnerElement is received!");
+  NS_ABORT_IF_FALSE(mDefaultScale.scale > 0,
+                    "Must not ask for scale before OwnerElement is received!");
   *aValue = mDefaultScale.scale;
   return true;
 }
@@ -2403,22 +2399,24 @@ TabParent::UseAsyncPanZoom()
           GetScrollingBehavior() == ASYNC_PAN_ZOOM);
 }
 
-nsEventStatus
-TabParent::MaybeForwardEventToRenderFrame(WidgetInputEvent& aEvent,
-                                          ScrollableLayerGuid* aOutTargetGuid,
-                                          uint64_t* aOutInputBlockId)
+void
+TabParent::ApzAwareEventRoutingToChild(ScrollableLayerGuid* aOutTargetGuid,
+                                       uint64_t* aOutInputBlockId)
 {
-  if (aEvent.mClass == eWheelEventClass
-#ifdef MOZ_WIDGET_GONK
-      || aEvent.mClass == eTouchEventClass
-#endif
-     ) {
-    // Wheel events must be sent to APZ directly from the widget. New APZ-
-    // aware events should follow suit and move there as well. However, we
-    // do need to inform the child process of the correct target and block
-    // id.
+  if (gfxPrefs::AsyncPanZoomEnabled()) {
     if (aOutTargetGuid) {
       *aOutTargetGuid = InputAPZContext::GetTargetLayerGuid();
+
+      // There may be cases where the APZ hit-testing code came to a different
+      // conclusion than the main-thread hit-testing code as to where the event
+      // is destined. In such cases the layersId of the APZ result may not match
+      // the layersId of this renderframe. In such cases the main-thread hit-
+      // testing code "wins" so we need to update the guid to reflect this.
+      if (RenderFrameParent* rfp = GetRenderFrame()) {
+        if (aOutTargetGuid->mLayersId != rfp->GetLayersId()) {
+          *aOutTargetGuid = ScrollableLayerGuid(rfp->GetLayersId(), 0, FrameMetrics::NULL_SCROLL_ID);
+        }
+      }
     }
     if (aOutInputBlockId) {
       *aOutInputBlockId = InputAPZContext::GetInputBlockId();
@@ -2427,14 +2425,7 @@ TabParent::MaybeForwardEventToRenderFrame(WidgetInputEvent& aEvent,
     // Let the widget know that the event will be sent to the child process,
     // which will (hopefully) send a confirmation notice back to APZ.
     InputAPZContext::SetRoutedToChildProcess();
-
-    return nsEventStatus_eIgnore;
   }
-
-  if (RenderFrameParent* rfp = GetRenderFrame()) {
-    return rfp->NotifyInputEvent(aEvent, aOutTargetGuid, aOutInputBlockId);
-  }
-  return nsEventStatus_eIgnore;
 }
 
 bool

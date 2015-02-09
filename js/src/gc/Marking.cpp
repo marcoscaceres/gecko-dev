@@ -22,7 +22,6 @@
 #include "vm/UnboxedObject.h"
 
 #include "jscompartmentinlines.h"
-#include "jsinferinlines.h"
 #include "jsobjinlines.h"
 
 #include "gc/Nursery-inl.h"
@@ -787,18 +786,18 @@ gc::MarkValueRoot(JSTracer *trc, Value *v, const char *name)
 }
 
 void
-gc::MarkTypeRoot(JSTracer *trc, types::Type *v, const char *name)
+TypeSet::MarkTypeRoot(JSTracer *trc, TypeSet::Type *v, const char *name)
 {
     JS_ROOT_MARKING_ASSERT(trc);
     trc->setTracingName(name);
     if (v->isSingleton()) {
         JSObject *obj = v->singleton();
         MarkInternal(trc, &obj);
-        *v = types::Type::ObjectType(obj);
+        *v = TypeSet::ObjectType(obj);
     } else if (v->isGroup()) {
         ObjectGroup *group = v->group();
         MarkInternal(trc, &group);
-        *v = types::Type::ObjectType(group);
+        *v = TypeSet::ObjectType(group);
     }
 }
 
@@ -1426,7 +1425,7 @@ ScanObjectGroup(GCMarker *gcmarker, ObjectGroup *group)
 {
     unsigned count = group->getPropertyCount();
     for (unsigned i = 0; i < count; i++) {
-        if (types::Property *prop = group->getProperty(i))
+        if (ObjectGroup::Property *prop = group->getProperty(i))
             MarkId(gcmarker, &prop->id, "ObjectGroup property id");
     }
 
@@ -1454,8 +1453,7 @@ gc::MarkChildren(JSTracer *trc, ObjectGroup *group)
 {
     unsigned count = group->getPropertyCount();
     for (unsigned i = 0; i < count; i++) {
-        types::Property *prop = group->getProperty(i);
-        if (prop)
+        if (ObjectGroup::Property *prop = group->getProperty(i))
             MarkId(trc, &prop->id, "group_property");
     }
 

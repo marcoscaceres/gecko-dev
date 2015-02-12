@@ -9167,13 +9167,18 @@ GetTemplateObjectForNative(JSContext *cx, HandleScript script, jsbytecode *pc,
     }
 
     if (JitSupportsSimd()) {
-        if (native == js::simd_int32x4_add || native == js::simd_int32x4_and) {
+#define ADD_INT32X4_SIMD_OP_NAME_(OP) || native == js::simd_int32x4_##OP
+       if (false
+           ARITH_COMMONX4_SIMD_OP(ADD_INT32X4_SIMD_OP_NAME_)
+           BITWISE_COMMONX4_SIMD_OP(ADD_INT32X4_SIMD_OP_NAME_))
+       {
             Rooted<TypeDescr *> descr(cx, &Int32x4::GetTypeDescr(*cx->global()));
             res.set(TypedObject::createZeroed(cx, descr, 0, gc::TenuredHeap));
             if (!res)
                 return false;
             return true;
-        }
+       }
+#undef ADD_INT32X4_SIMD_OP_NAME_
     }
 
     return true;
@@ -9294,9 +9299,6 @@ TryAttachCallStub(JSContext *cx, ICCall_Fallback *stub, HandleScript script, jsb
 
         RootedScript calleeScript(cx, fun->nonLazyScript());
         if (!calleeScript->hasBaselineScript() && !calleeScript->hasIonScript())
-            return true;
-
-        if (calleeScript->shouldCloneAtCallsite())
             return true;
 
         // Check if this stub chain has already generalized scripted calls.
@@ -9496,25 +9498,6 @@ TryAttachStringSplit(JSContext *cx, ICCall_Fallback *stub, HandleScript script,
 }
 
 static bool
-MaybeCloneFunctionAtCallsite(JSContext *cx, MutableHandleValue callee, HandleScript script,
-                             jsbytecode *pc)
-{
-    RootedFunction fun(cx);
-    if (!IsFunctionObject(callee, fun.address()))
-        return true;
-
-    if (!fun->hasScript() || !fun->nonLazyScript()->shouldCloneAtCallsite())
-        return true;
-
-    fun = CloneFunctionAtCallsite(cx, fun, script, pc);
-    if (!fun)
-        return false;
-
-    callee.setObject(*fun);
-    return true;
-}
-
-static bool
 DoCallFallback(JSContext *cx, BaselineFrame *frame, ICCall_Fallback *stub_, uint32_t argc,
                Value *vp, MutableHandleValue res)
 {
@@ -9549,9 +9532,6 @@ DoCallFallback(JSContext *cx, BaselineFrame *frame, ICCall_Fallback *stub_, uint
 
     // Try attaching a call stub.
     if (!TryAttachCallStub(cx, stub, script, pc, op, argc, vp, constructing, false, createSingleton))
-        return false;
-
-    if (!MaybeCloneFunctionAtCallsite(cx, &callee, script, pc))
         return false;
 
     if (op == JSOP_NEW) {
@@ -9622,9 +9602,6 @@ DoSpreadCallFallback(JSContext *cx, BaselineFrame *frame, ICCall_Fallback *stub_
     {
         return false;
     }
-
-    if (!MaybeCloneFunctionAtCallsite(cx, &callee, script, pc))
-        return false;
 
     if (!SpreadCallOperation(cx, script, pc, thisv, callee, arr, res))
         return false;

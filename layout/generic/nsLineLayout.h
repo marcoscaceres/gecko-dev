@@ -56,7 +56,7 @@ public:
                        bool aImpactedByFloats,
                        bool aIsTopOfPage,
                        mozilla::WritingMode aWritingMode,
-                       nscoord aContainerWidth);
+                       const nsSize& aContainerSize);
 
   void EndLineReflow();
 
@@ -189,8 +189,9 @@ public:
     // provided to the line layout. However, floats should never be
     // associated with ruby text containers, hence this method should
     // not be called in that case.
-    NS_ABORT_IF_FALSE(mBlockRS, "Should not call this method "
-                      "if there is no block reflow state available");
+    MOZ_ASSERT(mBlockRS,
+               "Should not call this method if there is no block reflow state "
+               "available");
     return mBlockRS->AddFloat(this, aFloat, aAvailableISize);
   }
 
@@ -305,6 +306,11 @@ public:
     *aOffset = mLastOptionalBreakFrameOffset;
     *aPriority = mLastOptionalBreakPriority;
     return mLastOptionalBreakFrame;
+  }
+  // Whether any optional break position has been recorded.
+  bool HasOptionalBreakPosition() const
+  {
+    return mLastOptionalBreakFrame != nullptr;
   }
   
   /**
@@ -543,11 +549,11 @@ protected:
 
   // The container width to use when converting between logical and
   // physical coordinates for frames in this span. For the root span
-  // this is the width of the block cached in mContainerWidth; for
+  // this is the width of the block cached in mContainerSize.width; for
   // child spans it's the width of the root span
   nscoord ContainerWidthForSpan(PerSpanData* aPSD) {
     return (aPSD == mRootSpan)
-      ? mContainerWidth
+      ? ContainerWidth()
       : aPSD->mFrame->mBounds.Width(mRootSpan->mWritingMode);
   }
 
@@ -582,8 +588,10 @@ protected:
   // frame, if any
   nscoord mTrimmableISize;
 
-  // Physical width. Use only for physical <-> logical coordinate conversion.
-  nscoord mContainerWidth;
+  // Physical size. Use only for physical <-> logical coordinate conversion.
+  nsSize mContainerSize;
+  nscoord ContainerWidth() const { return mContainerSize.width; }
+  nscoord ContainerHeight() const { return mContainerSize.height; }
 
   bool mFirstLetterStyleOK      : 1;
   bool mIsTopOfPage             : 1;

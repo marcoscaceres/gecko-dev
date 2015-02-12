@@ -631,8 +631,9 @@ public:
 
         PL_DHashTableInit(&mMap, &mOps, sizeof(FNCMapEntry), 0);
 
-        NS_ABORT_IF_FALSE(XRE_GetProcessType() == GeckoProcessType_Default,
-                          "StartupCacheFontNameCache should only be used in chrome process");
+        MOZ_ASSERT(XRE_GetProcessType() == GeckoProcessType_Default,
+                   "StartupCacheFontNameCache should only be used in chrome "
+                   "process");
         mCache = mozilla::scache::StartupCache::GetSingleton();
 
         Init();
@@ -687,8 +688,9 @@ public:
             }
             uint32_t filesize = strtoul(beginning, nullptr, 10);
 
-            FNCMapEntry* mapEntry = static_cast<FNCMapEntry*>
-                (PL_DHashTableAdd(&mMap, filename.get(), fallible));
+            FNCMapEntry* mapEntry =
+                static_cast<FNCMapEntry*>
+                (PL_DHashTableAdd(&mMap, filename.get()));
             if (mapEntry) {
                 mapEntry->mFilename.Assign(filename);
                 mapEntry->mTimestamp = timestamp;
@@ -735,8 +737,9 @@ public:
         if (!mMap.IsInitialized()) {
             return;
         }
-        FNCMapEntry* entry = static_cast<FNCMapEntry*>
-            (PL_DHashTableAdd(&mMap, aFileName.get(), fallible));
+        FNCMapEntry* entry =
+            static_cast<FNCMapEntry*>
+            (PL_DHashTableAdd(&mMap, aFileName.get()));
         if (entry) {
             entry->mFilename.Assign(aFileName);
             entry->mTimestamp = aTimestamp;

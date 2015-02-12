@@ -183,6 +183,114 @@ CaseBody(ParseNode *pn)
     return BinaryRight(pn);
 }
 
+static inline ParseNode *
+BinaryOpLeft(ParseNode *pn)
+{
+    MOZ_ASSERT(pn->isBinaryOperation());
+    MOZ_ASSERT(pn->isArity(PN_LIST));
+    MOZ_ASSERT(pn->pn_count == 2);
+    return ListHead(pn);
+}
+
+static inline ParseNode *
+BinaryOpRight(ParseNode *pn)
+{
+    MOZ_ASSERT(pn->isBinaryOperation());
+    MOZ_ASSERT(pn->isArity(PN_LIST));
+    MOZ_ASSERT(pn->pn_count == 2);
+    return NextNode(ListHead(pn));
+}
+
+static inline ParseNode *
+BitwiseLeft(ParseNode *pn)
+{
+    return BinaryOpLeft(pn);
+}
+
+static inline ParseNode *
+BitwiseRight(ParseNode *pn)
+{
+    return BinaryOpRight(pn);
+}
+
+static inline ParseNode *
+MultiplyLeft(ParseNode *pn)
+{
+    MOZ_ASSERT(pn->isKind(PNK_STAR));
+    return BinaryOpLeft(pn);
+}
+
+static inline ParseNode *
+MultiplyRight(ParseNode *pn)
+{
+    MOZ_ASSERT(pn->isKind(PNK_STAR));
+    return BinaryOpRight(pn);
+}
+
+static inline ParseNode *
+AddSubLeft(ParseNode *pn)
+{
+    MOZ_ASSERT(pn->isKind(PNK_ADD) || pn->isKind(PNK_SUB));
+    return BinaryOpLeft(pn);
+}
+
+static inline ParseNode *
+AddSubRight(ParseNode *pn)
+{
+    MOZ_ASSERT(pn->isKind(PNK_ADD) || pn->isKind(PNK_SUB));
+    return BinaryOpRight(pn);
+}
+
+static inline ParseNode *
+DivOrModLeft(ParseNode *pn)
+{
+    MOZ_ASSERT(pn->isKind(PNK_DIV) || pn->isKind(PNK_MOD));
+    return BinaryOpLeft(pn);
+}
+
+static inline ParseNode *
+DivOrModRight(ParseNode *pn)
+{
+    MOZ_ASSERT(pn->isKind(PNK_DIV) || pn->isKind(PNK_MOD));
+    return BinaryOpRight(pn);
+}
+
+static inline ParseNode *
+ComparisonLeft(ParseNode *pn)
+{
+    return BinaryOpLeft(pn);
+}
+
+static inline ParseNode *
+ComparisonRight(ParseNode *pn)
+{
+    return BinaryOpRight(pn);
+}
+
+static inline ParseNode *
+AndOrLeft(ParseNode *pn)
+{
+    return BinaryOpLeft(pn);
+}
+
+static inline ParseNode *
+AndOrRight(ParseNode *pn)
+{
+    return BinaryOpRight(pn);
+}
+
+static inline ParseNode *
+RelationalLeft(ParseNode *pn)
+{
+    return BinaryOpLeft(pn);
+}
+
+static inline ParseNode *
+RelationalRight(ParseNode *pn)
+{
+    return BinaryOpRight(pn);
+}
+
 static inline bool
 IsExpressionStatement(ParseNode *pn)
 {
@@ -3712,13 +3820,13 @@ CheckTypeAnnotation(ModuleCompiler &m, ParseNode *coercionNode, AsmJSCoercion *c
 {
     switch (coercionNode->getKind()) {
       case PNK_BITOR: {
-        ParseNode *rhs = BinaryRight(coercionNode);
+        ParseNode *rhs = BitwiseRight(coercionNode);
         uint32_t i;
         if (!IsLiteralInt(m, rhs, &i) || i != 0)
             return m.fail(rhs, "must use |0 for argument/return coercion");
         *coercion = AsmJS_ToInt32;
         if (coercedExpr)
-            *coercedExpr = BinaryLeft(coercionNode);
+            *coercedExpr = BitwiseLeft(coercionNode);
         return true;
       }
       case PNK_POS: {
@@ -4329,8 +4437,10 @@ static bool
 FoldMaskedArrayIndex(FunctionCompiler &f, ParseNode **indexExpr, int32_t *mask,
                      NeedsBoundsCheck *needsBoundsCheck)
 {
-    ParseNode *indexNode = BinaryLeft(*indexExpr);
-    ParseNode *maskNode = BinaryRight(*indexExpr);
+    MOZ_ASSERT((*indexExpr)->isKind(PNK_BITAND));
+
+    ParseNode *indexNode = BitwiseLeft(*indexExpr);
+    ParseNode *maskNode = BitwiseRight(*indexExpr);
 
     uint32_t mask2;
     if (IsLiteralOrConstInt(f, maskNode, &mask2)) {
@@ -4388,16 +4498,17 @@ CheckArrayAccess(FunctionCompiler &f, ParseNode *viewName, ParseNode *indexExpr,
 
     MDefinition *pointerDef;
     if (indexExpr->isKind(PNK_RSH)) {
-        ParseNode *shiftNode = BinaryRight(indexExpr);
-        ParseNode *pointerNode = BinaryLeft(indexExpr);
+        ParseNode *shiftAmountNode = BitwiseRight(indexExpr);
 
         uint32_t shift;
-        if (!IsLiteralInt(f.m(), shiftNode, &shift))
-            return f.failf(shiftNode, "shift amount must be constant");
+        if (!IsLiteralInt(f.m(), shiftAmountNode, &shift))
+            return f.failf(shiftAmountNode, "shift amount must be constant");
 
         unsigned requiredShift = TypedArrayShift(*viewType);
         if (shift != requiredShift)
-            return f.failf(shiftNode, "shift amount must be %u", requiredShift);
+            return f.failf(shiftAmountNode, "shift amount must be %u", requiredShift);
+
+        ParseNode *pointerNode = BitwiseLeft(indexExpr);
 
         if (pointerNode->isKind(PNK_BITAND))
             FoldMaskedArrayIndex(f, &pointerNode, &mask, needsBoundsCheck);
@@ -4596,6 +4707,7 @@ static bool
 CheckAssign(FunctionCompiler &f, ParseNode *assign, MDefinition **def, Type *type)
 {
     MOZ_ASSERT(assign->isKind(PNK_ASSIGN));
+
     ParseNode *lhs = BinaryLeft(assign);
     ParseNode *rhs = BinaryRight(assign);
 
@@ -5094,8 +5206,8 @@ CheckFuncPtrCall(FunctionCompiler &f, ParseNode *callNode, RetType retType, MDef
     if (!indexExpr->isKind(PNK_BITAND))
         return f.fail(indexExpr, "function-pointer table index expression needs & mask");
 
-    ParseNode *indexNode = BinaryLeft(indexExpr);
-    ParseNode *maskNode = BinaryRight(indexExpr);
+    ParseNode *indexNode = BitwiseLeft(indexExpr);
+    ParseNode *maskNode = BitwiseRight(indexExpr);
 
     uint32_t mask;
     if (!IsLiteralInt(f.m(), maskNode, &mask) || mask == UINT32_MAX || !IsPowerOfTwo(mask + 1))
@@ -5740,22 +5852,12 @@ CheckSimdOperationCall(FunctionCompiler &f, ParseNode *call, const ModuleCompile
     AsmJSSimdType opType = global->simdOperationType();
 
     switch (global->simdOperation()) {
-      case AsmJSSimdOperation_add:
-        return CheckSimdBinary(f, call, opType, MSimdBinaryArith::Add, def, type);
-      case AsmJSSimdOperation_sub:
-        return CheckSimdBinary(f, call, opType, MSimdBinaryArith::Sub, def, type);
-      case AsmJSSimdOperation_mul:
-        return CheckSimdBinary(f, call, opType, MSimdBinaryArith::Mul, def, type);
-      case AsmJSSimdOperation_div:
-        return CheckSimdBinary(f, call, opType, MSimdBinaryArith::Div, def, type);
-      case AsmJSSimdOperation_max:
-        return CheckSimdBinary(f, call, opType, MSimdBinaryArith::Max, def, type);
-      case AsmJSSimdOperation_min:
-        return CheckSimdBinary(f, call, opType, MSimdBinaryArith::Min, def, type);
-      case AsmJSSimdOperation_maxNum:
-        return CheckSimdBinary(f, call, opType, MSimdBinaryArith::MaxNum, def, type);
-      case AsmJSSimdOperation_minNum:
-        return CheckSimdBinary(f, call, opType, MSimdBinaryArith::MinNum, def, type);
+#define OP_CHECK_CASE_LIST_(OP)                                                         \
+      case AsmJSSimdOperation_##OP:                                                     \
+        return CheckSimdBinary(f, call, opType, MSimdBinaryArith::Op_##OP, def, type);
+      ARITH_COMMONX4_SIMD_OP(OP_CHECK_CASE_LIST_)
+      ARITH_FLOAT32X4_SIMD_OP(OP_CHECK_CASE_LIST_)
+#undef OP_CHECK_CASE_LIST_
 
       case AsmJSSimdOperation_lessThan:
         return CheckSimdBinary(f, call, opType, MSimdBinaryComp::lessThan, def, type);
@@ -6287,8 +6389,8 @@ static bool
 CheckMultiply(FunctionCompiler &f, ParseNode *star, MDefinition **def, Type *type)
 {
     MOZ_ASSERT(star->isKind(PNK_STAR));
-    ParseNode *lhs = BinaryLeft(star);
-    ParseNode *rhs = BinaryRight(star);
+    ParseNode *lhs = MultiplyLeft(star);
+    ParseNode *rhs = MultiplyRight(star);
 
     MDefinition *lhsDef;
     Type lhsType;
@@ -6330,8 +6432,8 @@ CheckAddOrSub(FunctionCompiler &f, ParseNode *expr, MDefinition **def, Type *typ
     JS_CHECK_RECURSION_DONT_REPORT(f.cx(), return f.m().failOverRecursed());
 
     MOZ_ASSERT(expr->isKind(PNK_ADD) || expr->isKind(PNK_SUB));
-    ParseNode *lhs = BinaryLeft(expr);
-    ParseNode *rhs = BinaryRight(expr);
+    ParseNode *lhs = AddSubLeft(expr);
+    ParseNode *rhs = AddSubRight(expr);
 
     MDefinition *lhsDef, *rhsDef;
     Type lhsType, rhsType;
@@ -6392,8 +6494,9 @@ static bool
 CheckDivOrMod(FunctionCompiler &f, ParseNode *expr, MDefinition **def, Type *type)
 {
     MOZ_ASSERT(expr->isKind(PNK_DIV) || expr->isKind(PNK_MOD));
-    ParseNode *lhs = BinaryLeft(expr);
-    ParseNode *rhs = BinaryRight(expr);
+
+    ParseNode *lhs = DivOrModLeft(expr);
+    ParseNode *rhs = DivOrModRight(expr);
 
     MDefinition *lhsDef, *rhsDef;
     Type lhsType, rhsType;
@@ -6446,8 +6549,9 @@ CheckComparison(FunctionCompiler &f, ParseNode *comp, MDefinition **def, Type *t
 {
     MOZ_ASSERT(comp->isKind(PNK_LT) || comp->isKind(PNK_LE) || comp->isKind(PNK_GT) ||
                comp->isKind(PNK_GE) || comp->isKind(PNK_EQ) || comp->isKind(PNK_NE));
-    ParseNode *lhs = BinaryLeft(comp);
-    ParseNode *rhs = BinaryRight(comp);
+
+    ParseNode *lhs = ComparisonLeft(comp);
+    ParseNode *rhs = ComparisonRight(comp);
 
     MDefinition *lhsDef, *rhsDef;
     Type lhsType, rhsType;
@@ -6484,8 +6588,8 @@ CheckComparison(FunctionCompiler &f, ParseNode *comp, MDefinition **def, Type *t
 static bool
 CheckBitwise(FunctionCompiler &f, ParseNode *bitwise, MDefinition **def, Type *type)
 {
-    ParseNode *lhs = BinaryLeft(bitwise);
-    ParseNode *rhs = BinaryRight(bitwise);
+    ParseNode *lhs = BitwiseLeft(bitwise);
+    ParseNode *rhs = BitwiseRight(bitwise);
 
     int32_t identityElement;
     bool onlyOnRight;
@@ -7208,20 +7312,20 @@ static bool
 CheckHeapLengthCondition(ModuleCompiler &m, ParseNode *cond, PropertyName *newBufferName,
                          uint32_t *mask, uint32_t *minLength, uint32_t *maxLength)
 {
-    if (!cond->isKind(PNK_OR) || !BinaryLeft(cond)->isKind(PNK_OR))
+    if (!cond->isKind(PNK_OR) || !AndOrLeft(cond)->isKind(PNK_OR))
         return m.fail(cond, "expecting byteLength & K || byteLength <= L || byteLength > M");
 
-    ParseNode *cond1 = BinaryLeft(BinaryLeft(cond));
-    ParseNode *cond2 = BinaryRight(BinaryLeft(cond));
-    ParseNode *cond3 = BinaryRight(cond);
+    ParseNode *cond1 = AndOrLeft(AndOrLeft(cond));
+    ParseNode *cond2 = AndOrRight(AndOrLeft(cond));
+    ParseNode *cond3 = AndOrRight(cond);
 
     if (!cond1->isKind(PNK_BITAND))
         return m.fail(cond1, "expecting byteLength & K");
 
-    if (!CheckByteLengthCall(m, BinaryLeft(cond1), newBufferName))
+    if (!CheckByteLengthCall(m, BitwiseLeft(cond1), newBufferName))
         return false;
 
-    ParseNode *maskNode = BinaryRight(cond1);
+    ParseNode *maskNode = BitwiseRight(cond1);
     if (!IsLiteralInt(m, maskNode, mask))
         return m.fail(maskNode, "expecting integer literal mask");
     if ((*mask & 0xffffff) != 0xffffff)
@@ -7230,10 +7334,10 @@ CheckHeapLengthCondition(ModuleCompiler &m, ParseNode *cond, PropertyName *newBu
     if (!cond2->isKind(PNK_LE))
         return m.fail(cond2, "expecting byteLength <= L");
 
-    if (!CheckByteLengthCall(m, BinaryLeft(cond2), newBufferName))
+    if (!CheckByteLengthCall(m, RelationalLeft(cond2), newBufferName))
         return false;
 
-    ParseNode *minLengthNode = BinaryRight(cond2);
+    ParseNode *minLengthNode = RelationalRight(cond2);
     uint32_t minLengthExclusive;
     if (!IsLiteralInt(m, minLengthNode, &minLengthExclusive))
         return m.fail(minLengthNode, "expecting integer literal");
@@ -7246,10 +7350,10 @@ CheckHeapLengthCondition(ModuleCompiler &m, ParseNode *cond, PropertyName *newBu
     if (!cond3->isKind(PNK_GT))
         return m.fail(cond3, "expecting byteLength > M");
 
-    if (!CheckByteLengthCall(m, BinaryLeft(cond3), newBufferName))
+    if (!CheckByteLengthCall(m, RelationalLeft(cond3), newBufferName))
         return false;
 
-    ParseNode *maxLengthNode = BinaryRight(cond3);
+    ParseNode *maxLengthNode = RelationalRight(cond3);
     if (!IsLiteralInt(m, maxLengthNode, maxLength))
         return m.fail(maxLengthNode, "expecting integer literal");
     if (*maxLength > 0x80000000)
@@ -8044,10 +8148,10 @@ CheckModuleReturn(ModuleCompiler &m)
 }
 
 static void
-AssertStackAlignment(MacroAssembler &masm, uint32_t alignment)
+AssertStackAlignment(MacroAssembler &masm, uint32_t alignment, uint32_t addBeforeAssert = 0)
 {
-    MOZ_ASSERT((sizeof(AsmJSFrame) + masm.framePushed()) % alignment == 0);
-    masm.assertStackAlignment(alignment);
+    MOZ_ASSERT((sizeof(AsmJSFrame) + masm.framePushed() + addBeforeAssert) % alignment == 0);
+    masm.assertStackAlignment(alignment, addBeforeAssert);
 }
 
 static unsigned
@@ -8330,6 +8434,7 @@ GenerateCheckForHeapDetachment(ModuleCompiler &m, Register scratch)
         return;
 
     MacroAssembler &masm = m.masm();
+    MOZ_ASSERT(int(masm.framePushed()) >= int(ShadowStackSpace));
     AssertStackAlignment(masm, ABIStackAlignment);
 #if defined(JS_CODEGEN_X86)
     CodeOffsetLabel label = masm.movlWithPatch(PatchedAbsoluteAddress(), scratch);
@@ -8434,17 +8539,9 @@ GenerateFFIInterpExit(ModuleCompiler &m, const ModuleCompiler::ExitDescriptor &e
     return m.finishGeneratingInterpExit(exitIndex, &begin, &profilingReturn) && !masm.oom();
 }
 
-// On ARM/MIPS, we need to include an extra word of space at the top of the
-// stack so we can explicitly store the return address before making the call
-// to C++ or Ion and an extra word to store the pinned global-data register. On
-// x86/x64, neither is necessary since the call instruction pushes the return
-// address and global data is reachable via immediate or rip-relative
-// addressing.
 #if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_MIPS)
-static const unsigned MaybeRetAddr = sizeof(void*);
 static const unsigned MaybeSavedGlobalReg = sizeof(void*);
 #else
-static const unsigned MaybeRetAddr = 0;
 static const unsigned MaybeSavedGlobalReg = 0;
 #endif
 
@@ -8453,38 +8550,26 @@ GenerateFFIIonExit(ModuleCompiler &m, const ModuleCompiler::ExitDescriptor &exit
                    unsigned exitIndex, Label *throwLabel)
 {
     MacroAssembler &masm = m.masm();
-
-    // The same stack frame is used for the call into Ion and (possibly) a call
-    // into C++ to coerce the return type. To do this, we compute the amount of
-    // space required for both calls and take the maximum. In both cases,
-    // include space for MaybeSavedGlobalReg, since this goes below the Ion/coerce.
+    MOZ_ASSERT(masm.framePushed() == 0);
 
     // Ion calls use the following stack layout (sp grows to the left):
-    //   | return address | descriptor | callee | argc | this | arg1 | arg2 | ...
-    unsigned offsetToIonArgs = MaybeRetAddr;
-    unsigned ionArgBytes = 3 * sizeof(size_t) + (1 + exit.sig().args().length()) * sizeof(Value);
-    unsigned totalIonBytes = offsetToIonArgs + ionArgBytes + MaybeSavedGlobalReg;
-    unsigned ionFrameSize = StackDecrementForCall(masm, AsmJSStackAlignment, totalIonBytes);
-
-    // Coercion calls use the following stack layout (sp grows to the left):
-    //   | stack args | padding | Value argv[1] | ...
-    // The padding between args and argv ensures that argv is aligned.
-    MIRTypeVector coerceArgTypes(m.cx());
-    if (!coerceArgTypes.append(MIRType_Pointer)) // argv
-        return false;
-
-    unsigned offsetToCoerceArgv = AlignBytes(StackArgBytes(coerceArgTypes), sizeof(double));
-    unsigned totalCoerceBytes = offsetToCoerceArgv + sizeof(Value) + MaybeSavedGlobalReg;
-    unsigned coerceFrameSize = StackDecrementForCall(masm, AsmJSStackAlignment, totalCoerceBytes);
-
-    unsigned framePushed = Max(ionFrameSize, coerceFrameSize);
+    //   | retaddr | descriptor | callee | argc | this | arg1..N |
+    // After the Ion frame, the global register (if present) is saved since Ion
+    // does not preserve non-volatile regs. Also, unlike most ABIs, Ion requires
+    // that sp be JitStackAlignment-aligned *after* pushing the return address.
+    static_assert(AsmJSStackAlignment >= JitStackAlignment, "subsumes");
+    unsigned sizeOfRetAddr = sizeof(void*);
+    unsigned ionFrameBytes = 3 * sizeof(void*) + (1 + exit.sig().args().length()) * sizeof(Value);
+    unsigned totalIonBytes = sizeOfRetAddr + ionFrameBytes + MaybeSavedGlobalReg;
+    unsigned ionFramePushed = StackDecrementForCall(masm, JitStackAlignment, totalIonBytes) -
+                              sizeOfRetAddr;
 
     Label begin;
-    GenerateAsmJSExitPrologue(masm, framePushed, AsmJSExit::JitFFI, &begin);
+    GenerateAsmJSExitPrologue(masm, ionFramePushed, AsmJSExit::JitFFI, &begin);
 
     // 1. Descriptor
-    size_t argOffset = offsetToIonArgs;
-    uint32_t descriptor = MakeFrameDescriptor(framePushed, JitFrame_Entry);
+    size_t argOffset = 0;
+    uint32_t descriptor = MakeFrameDescriptor(ionFramePushed, JitFrame_Entry);
     masm.storePtr(ImmWord(uintptr_t(descriptor)), Address(StackPointer, argOffset));
     argOffset += sizeof(size_t);
 
@@ -8523,10 +8608,10 @@ GenerateFFIIonExit(ModuleCompiler &m, const ModuleCompiler::ExitDescriptor &exit
     argOffset += sizeof(Value);
 
     // 5. Fill the arguments
-    unsigned offsetToCallerStackArgs = framePushed + sizeof(AsmJSFrame);
+    unsigned offsetToCallerStackArgs = ionFramePushed + sizeof(AsmJSFrame);
     FillArgumentArray(m, exit.sig().args(), argOffset, offsetToCallerStackArgs, scratch);
     argOffset += exit.sig().args().length() * sizeof(Value);
-    MOZ_ASSERT(argOffset == offsetToIonArgs + ionArgBytes);
+    MOZ_ASSERT(argOffset == ionFrameBytes);
 
     // 6. Jit code will clobber all registers, even non-volatiles. GlobalReg and
     //    HeapReg are removed from the general register set for asm.js code, so
@@ -8535,11 +8620,8 @@ GenerateFFIIonExit(ModuleCompiler &m, const ModuleCompiler::ExitDescriptor &exit
     //    HeapReg must be reloaded (from global data) after the call since the
     //    heap may change during the FFI call.
 #if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_MIPS)
-    JS_STATIC_ASSERT(MaybeSavedGlobalReg > 0);
-    unsigned savedGlobalOffset = framePushed - MaybeSavedGlobalReg;
-    masm.storePtr(GlobalReg, Address(StackPointer, savedGlobalOffset));
-#else
-    JS_STATIC_ASSERT(MaybeSavedGlobalReg == 0);
+    static_assert(MaybeSavedGlobalReg == sizeof(void*), "stack frame accounting");
+    masm.storePtr(GlobalReg, Address(StackPointer, ionFrameBytes));
 #endif
 
     {
@@ -8601,10 +8683,9 @@ GenerateFFIIonExit(ModuleCompiler &m, const ModuleCompiler::ExitDescriptor &exit
         masm.storePtr(reg1, Address(reg0, offsetOfProfilingActivation));
     }
 
-    // 2. Call
-    AssertStackAlignment(masm, AsmJSStackAlignment);
+    AssertStackAlignment(masm, JitStackAlignment, sizeOfRetAddr);
     masm.callJitFromAsmJS(callee);
-    AssertStackAlignment(masm, AsmJSStackAlignment);
+    AssertStackAlignment(masm, JitStackAlignment, sizeOfRetAddr);
 
     {
         // Disable Activation.
@@ -8653,15 +8734,20 @@ GenerateFFIIonExit(ModuleCompiler &m, const ModuleCompiler::ExitDescriptor &exit
         masm.storePtr(reg2, Address(reg0, offsetOfJitActivation));
     }
 
-    MOZ_ASSERT(masm.framePushed() == framePushed);
-
     // Reload the global register since Ion code can clobber any register.
 #if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_MIPS)
-    JS_STATIC_ASSERT(MaybeSavedGlobalReg > 0);
-    masm.loadPtr(Address(StackPointer, savedGlobalOffset), GlobalReg);
-#else
-    JS_STATIC_ASSERT(MaybeSavedGlobalReg == 0);
+    static_assert(MaybeSavedGlobalReg == sizeof(void*), "stack frame accounting");
+    masm.loadPtr(Address(StackPointer, ionFrameBytes), GlobalReg);
 #endif
+
+    // As explained above, the frame was aligned for Ion such that
+    //   (sp + sizeof(void*)) % JitStackAlignment == 0
+    // But now we possibly want to call one of several different C++ functions,
+    // so subtract the sizeof(void*) so that sp is aligned for an ABI call.
+    static_assert(ABIStackAlignment <= JitStackAlignment, "subsumes");
+    masm.reserveStack(sizeOfRetAddr);
+    unsigned nativeFramePushed = masm.framePushed();
+    AssertStackAlignment(masm, ABIStackAlignment);
 
     masm.branchTestMagic(Assembler::Equal, JSReturnOperand, throwLabel);
 
@@ -8692,11 +8778,19 @@ GenerateFFIIonExit(ModuleCompiler &m, const ModuleCompiler::ExitDescriptor &exit
     GenerateCheckForHeapDetachment(m, ABIArgGenerator::NonReturn_VolatileReg0);
 
     Label profilingReturn;
-    GenerateAsmJSExitEpilogue(masm, framePushed, AsmJSExit::JitFFI, &profilingReturn);
+    GenerateAsmJSExitEpilogue(masm, masm.framePushed(), AsmJSExit::JitFFI, &profilingReturn);
 
     if (oolConvert.used()) {
         masm.bind(&oolConvert);
-        masm.setFramePushed(framePushed);
+        masm.setFramePushed(nativeFramePushed);
+
+        // Coercion calls use the following stack layout (sp grows to the left):
+        //   | args | padding | Value argv[1] | padding | exit AsmJSFrame |
+        MIRTypeVector coerceArgTypes(m.cx());
+        JS_ALWAYS_TRUE(coerceArgTypes.append(MIRType_Pointer));
+        unsigned offsetToCoerceArgv = AlignBytes(StackArgBytes(coerceArgTypes), sizeof(Value));
+        MOZ_ASSERT(nativeFramePushed >= offsetToCoerceArgv + sizeof(Value));
+        AssertStackAlignment(masm, ABIStackAlignment);
 
         // Store return value into argv[0]
         masm.storeValue(JSReturnOperand, Address(StackPointer, offsetToCoerceArgv));

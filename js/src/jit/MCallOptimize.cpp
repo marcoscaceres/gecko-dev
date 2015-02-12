@@ -257,10 +257,17 @@ IonBuilder::inlineNativeCall(CallInfo &callInfo, JSFunction *target)
         return inlineBoundFunction(callInfo, target);
 
     // Simd functions
-    if (native == js::simd_int32x4_add)
-        return inlineSimdInt32x4BinaryArith(callInfo, native, MSimdBinaryArith::Add);
-    if (native == js::simd_int32x4_and)
-        return inlineSimdInt32x4BinaryBitwise(callInfo, native, MSimdBinaryBitwise::and_);
+#define INLINE_INT32X4_SIMD_ARITH_(OP)                                                      \
+    if (native == js::simd_int32x4_##OP)                                                    \
+        return inlineSimdInt32x4BinaryArith(callInfo, native, MSimdBinaryArith::Op_##OP);
+    ARITH_COMMONX4_SIMD_OP(INLINE_INT32X4_SIMD_ARITH_)
+#undef INLINE_INT32X4_SIMD_ARITH_
+
+#define INLINE_INT32X4_SIMD_BITWISE_(OP)                                                    \
+    if (native == js::simd_int32x4_##OP)                                                    \
+        return inlineSimdInt32x4BinaryBitwise(callInfo, native, MSimdBinaryBitwise::OP##_);
+    BITWISE_COMMONX4_SIMD_OP(INLINE_INT32X4_SIMD_BITWISE_)
+#undef INLINE_INT32X4_SIMD_BITWISE_
 
     return InliningStatus_NotInlined;
 }
@@ -2387,7 +2394,7 @@ IonBuilder::inlineBoundFunction(CallInfo &nativeCallInfo, JSFunction *target)
     for (size_t i = 0; i < nativeCallInfo.argc(); i++)
         callInfo.argv().infallibleAppend(nativeCallInfo.getArg(i));
 
-    if (!makeCall(scriptedTarget, callInfo, false))
+    if (!makeCall(scriptedTarget, callInfo))
         return InliningStatus_Error;
 
     return InliningStatus_Inlined;

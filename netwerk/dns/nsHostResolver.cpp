@@ -459,14 +459,12 @@ HostDB_ClearEntry(PLDHashTable *table,
     NS_RELEASE(he->rec);
 }
 
-static bool
-HostDB_InitEntry(PLDHashTable *table,
-                 PLDHashEntryHdr *entry,
+static void
+HostDB_InitEntry(PLDHashEntryHdr *entry,
                  const void *key)
 {
     nsHostDBEnt *he = static_cast<nsHostDBEnt *>(entry);
     nsHostRecord::Create(static_cast<const nsHostKey *>(key), &he->rec);
-    return true;
 }
 
 static const PLDHashTableOps gHostDB_ops =
@@ -764,7 +762,7 @@ nsHostResolver::ResolveHost(const char            *host,
 
             nsHostKey key = { host, flags, af };
             nsHostDBEnt *he = static_cast<nsHostDBEnt *>
-                (PL_DHashTableAdd(&mDB, &key, fallible));
+                                         (PL_DHashTableAdd(&mDB, &key));
 
             // if the record is null, the hash table OOM'd.
             if (!he) {

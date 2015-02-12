@@ -2171,13 +2171,14 @@ TemporaryTypeSet::maybeEmulatesUndefined(CompilerConstraintList *constraints)
     return false;
 }
 
-JSObject *
-TemporaryTypeSet::getCommonPrototype(CompilerConstraintList *constraints)
+bool
+TemporaryTypeSet::getCommonPrototype(CompilerConstraintList *constraints, JSObject **proto)
 {
     if (unknownObject())
-        return nullptr;
+        return false;
 
-    JSObject *proto = nullptr;
+    *proto = nullptr;
+    bool isFirst = true;
     unsigned count = getObjectCount();
 
     for (unsigned i = 0; i < count; i++) {
@@ -2186,27 +2187,27 @@ TemporaryTypeSet::getCommonPrototype(CompilerConstraintList *constraints)
             continue;
 
         if (key->unknownProperties())
-            return nullptr;
+            return false;
 
         TaggedProto nproto = key->proto();
-        if (proto) {
-            if (nproto != TaggedProto(proto))
-                return nullptr;
+        if (isFirst) {
+            if (nproto.isLazy())
+                return false;
+            *proto = nproto.toObjectOrNull();
+            isFirst = false;
         } else {
-            if (!nproto.isObject())
-                return nullptr;
-            proto = nproto.toObject();
+            if (nproto != TaggedProto(*proto))
+                return false;
         }
     }
 
     // Guard against mutating __proto__.
     for (unsigned i = 0; i < count; i++) {
-        ObjectKey *key = getObject(i);
-        if (key)
+        if (ObjectKey *key = getObject(i))
             JS_ALWAYS_TRUE(key->hasStableClassAndProto(constraints));
     }
 
-    return proto;
+    return true;
 }
 
 bool
@@ -2281,9 +2282,12 @@ js::TypeCanHaveExtraIndexedProperties(CompilerConstraintList *constraints,
     if (types->hasObjectFlags(constraints, OBJECT_FLAG_SPARSE_INDEXES))
         return true;
 
-    JSObject *proto = types->getCommonPrototype(constraints);
-    if (!proto)
+    JSObject *proto;
+    if (!types->getCommonPrototype(constraints, &proto))
         return true;
+
+    if (!proto)
+        return false;
 
     return PrototypeHasIndexedProperty(constraints, proto);
 }
@@ -3709,7 +3713,7 @@ ConstraintTypeSet::sweep(Zone *zone, AutoClearTypeInferenceStateOnOOM &oom)
                     objectCount = 0;
                     break;
                 }
-            } else if (key->isGroup() && key->group()->unknownProperties()) {
+            } else if (key->isGroup() && key->group()->unknownPropertiesDontCheckGeneration()) {
                 // Object sets containing objects with unknown properties might
                 // not be complete. Mark the type set as unknown, which it will
                 // be treated as during Ion compilation.
@@ -3727,7 +3731,7 @@ ConstraintTypeSet::sweep(Zone *zone, AutoClearTypeInferenceStateOnOOM &oom)
         } else {
             // As above, mark type sets containing objects with unknown
             // properties as unknown.
-            if (key->isGroup() && key->group()->unknownProperties())
+            if (key->isGroup() && key->group()->unknownPropertiesDontCheckGeneration())
                 flags |= TYPE_FLAG_ANYOBJECT;
             objectSet = nullptr;
             setBaseObjectCount(0);

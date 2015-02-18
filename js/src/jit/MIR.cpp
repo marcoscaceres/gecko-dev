@@ -629,6 +629,7 @@ MConstant *
 MConstant::NewTypedValue(TempAllocator &alloc, const Value &v, MIRType type, CompilerConstraintList *constraints)
 {
     MOZ_ASSERT(!IsSimdType(type));
+    MOZ_ASSERT_IF(type == MIRType_Float32, v.toDouble() == double(float(v.toDouble())));
     MConstant *constant = new(alloc) MConstant(v, constraints);
     constant->setResultType(type);
     return constant;
@@ -637,6 +638,8 @@ MConstant::NewTypedValue(TempAllocator &alloc, const Value &v, MIRType type, Com
 MConstant *
 MConstant::NewAsmJS(TempAllocator &alloc, const Value &v, MIRType type)
 {
+    if (type == MIRType_Float32)
+        return NewTypedValue(alloc, Float32Value(v.toNumber()), type);
     return NewTypedValue(alloc, v, type);
 }
 
@@ -4725,7 +4728,9 @@ AddGroupGuard(TempAllocator &alloc, MBasicBlock *current, MDefinition *obj,
         guard = MGuardObjectGroup::New(alloc, obj, key->group(), bailOnEquality,
                                        Bailout_ObjectIdentityOrTypeGuard);
     } else {
-        guard = MGuardObjectIdentity::New(alloc, obj, key->singleton(), bailOnEquality);
+        MConstant *singletonConst = MConstant::NewConstraintlessObject(alloc, key->singleton());
+        current->add(singletonConst);
+        guard = MGuardObjectIdentity::New(alloc, obj, singletonConst, bailOnEquality);
     }
 
     current->add(guard);

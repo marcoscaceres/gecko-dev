@@ -394,6 +394,7 @@ class CGDOMJSClass(CGThing):
                     {
                       nullptr, /* lookupProperty */
                       nullptr, /* defineProperty */
+                      nullptr, /* hasProperty */
                       nullptr, /* getProperty */
                       nullptr, /* setProperty */
                       nullptr, /* getOwnPropertyDescriptor */
@@ -687,12 +688,9 @@ def InterfaceObjectProtoGetter(descriptor):
            interface prototype as a JS::Handle<JSObject*> or None if no such
            function exists.
     """
-    parentWithInterfaceObject = descriptor.interface.parent
-    while (parentWithInterfaceObject and
-           not parentWithInterfaceObject.hasInterfaceObject()):
-        parentWithInterfaceObject = parentWithInterfaceObject.parent
-    if parentWithInterfaceObject:
-        parentIfaceName = parentWithInterfaceObject.identifier.name
+    parentInterface = descriptor.interface.parent
+    if parentInterface:
+        parentIfaceName = parentInterface.identifier.name
         parentDesc = descriptor.getDescriptor(parentIfaceName)
         prefix = toBindingNamespace(parentDesc.name)
         protoGetter = prefix + "::GetConstructorObject"
@@ -2098,8 +2096,8 @@ def methodLength(method):
 
 def isMaybeExposedIn(member, descriptor):
     # All we can say for sure is that if this is a worker descriptor
-    # and member is only exposed in windows, then it's not exposed.
-    return not descriptor.workers or member.exposureSet != set(["Window"])
+    # and member is not exposed in any worker, then it's not exposed.
+    return not descriptor.workers or member.isExposedInAnyWorker()
 
 def clearableCachedAttrs(descriptor):
     return (m for m in descriptor.interface.members if

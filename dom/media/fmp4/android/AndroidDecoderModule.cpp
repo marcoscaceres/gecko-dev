@@ -66,7 +66,10 @@ public:
   }
 
   virtual nsresult Input(mp4_demuxer::MP4Sample* aSample) MOZ_OVERRIDE {
-    mp4_demuxer::AnnexB::ConvertSampleToAnnexB(aSample);
+    if (!mp4_demuxer::AnnexB::ConvertSampleToAnnexB(aSample)) {
+      return NS_ERROR_OUT_OF_MEMORY;
+    }
+
     return MediaCodecDataDecoder::Input(aSample);
   }
 
@@ -179,7 +182,7 @@ protected:
       return true;
     }
 
-    mGLContext = GLContextProvider::CreateHeadless();
+    mGLContext = GLContextProvider::CreateHeadless(false);
     return mGLContext;
   }
 
@@ -257,7 +260,7 @@ AndroidDecoderModule::CreateVideoDecoder(
                                 const mp4_demuxer::VideoDecoderConfig& aConfig,
                                 layers::LayersBackend aLayersBackend,
                                 layers::ImageContainer* aImageContainer,
-                                MediaTaskQueue* aVideoTaskQueue,
+                                FlushableMediaTaskQueue* aVideoTaskQueue,
                                 MediaDataDecoderCallback* aCallback)
 {
   MediaFormat::LocalRef format;
@@ -276,7 +279,7 @@ AndroidDecoderModule::CreateVideoDecoder(
 
 already_AddRefed<MediaDataDecoder>
 AndroidDecoderModule::CreateAudioDecoder(const mp4_demuxer::AudioDecoderConfig& aConfig,
-                                         MediaTaskQueue* aAudioTaskQueue,
+                                         FlushableMediaTaskQueue* aAudioTaskQueue,
                                          MediaDataDecoderCallback* aCallback)
 {
   MOZ_ASSERT(aConfig.bits_per_sample == 16, "We only handle 16-bit audio!");

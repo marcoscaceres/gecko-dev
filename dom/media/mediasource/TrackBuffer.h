@@ -114,7 +114,6 @@ public:
 
 private:
   friend class DecodersToInitialize;
-  friend class ReleaseDecoderTask;
   ~TrackBuffer();
 
   // Create a new decoder, set mCurrentDecoder to the new decoder and
@@ -156,6 +155,9 @@ private:
   // mInitializedDecoders, it must have been removed before calling this
   // function.
   void RemoveDecoder(SourceBufferDecoder* aDecoder);
+
+  // Remove all empty decoders from the provided list;
+  void RemoveEmptyDecoders(nsTArray<SourceBufferDecoder*>& aDecoders);
 
   nsAutoPtr<ContainerParser> mParser;
 

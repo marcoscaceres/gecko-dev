@@ -432,7 +432,10 @@ nsComputedDOMStyle::GetStyleContextForElementNoFlush(Element* aElement,
       return nullptr;
   }
 
-  if (!aPseudo && aStyleType == eAll) {
+  // XXX the !aElement->IsHTML(nsGkAtoms::area)
+  // check is needed due to bug 135040 (to avoid using 
+  // mPrimaryFrame). Remove it once that's fixed.
+  if (!aPseudo && aStyleType == eAll && !aElement->IsHTML(nsGkAtoms::area)) {
     nsIFrame* frame = nsLayoutUtils::GetStyleFrame(aElement);
     if (frame) {
       nsStyleContext* result = frame->StyleContext();
@@ -594,7 +597,10 @@ nsComputedDOMStyle::UpdateCurrentStyleSources(bool aNeedsLayoutFlush)
     return;
   }
 
-  if (!mPseudo && mStyleType == eAll) {
+  // XXX the !mContent->IsHTML(nsGkAtoms::area)
+  // check is needed due to bug 135040 (to avoid using 
+  // mPrimaryFrame). Remove it once that's fixed.
+  if (!mPseudo && mStyleType == eAll && !mContent->IsHTML(nsGkAtoms::area)) {
     mOuterFrame = mContent->GetPrimaryFrame();
     mInnerFrame = mOuterFrame;
     if (mOuterFrame) {
@@ -3072,6 +3078,15 @@ nsComputedDOMStyle::DoGetLineHeight()
                     nullptr, nsCSSProps::kLineHeightKTable);
   }
 
+  return val;
+}
+
+CSSValue*
+nsComputedDOMStyle::DoGetRubyAlign()
+{
+  nsROCSSPrimitiveValue* val = new nsROCSSPrimitiveValue;
+  val->SetIdent(nsCSSProps::ValueToKeywordEnum(
+    StyleText()->mRubyAlign, nsCSSProps::kRubyAlignKTable));
   return val;
 }
 

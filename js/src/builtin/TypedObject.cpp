@@ -488,7 +488,7 @@ CreatePrototypeObjectForComplexTypeInstance(JSContext *cx, HandleObject ctorProt
         return nullptr;
 
     return NewObjectWithProto<TypedProto>(cx,
-                                          &*ctorPrototypePrototype,
+                                          ctorPrototypePrototype,
                                           NullPtr(),
                                           TenuredObject);
 }
@@ -778,11 +778,11 @@ StructMetaTypeDescr::create(JSContext *cx,
     int32_t alignment = 1;             // Alignment of struct.
     bool opaque = false;               // Opacity of struct.
 
-    userFieldOffsets = NewObjectWithProto<PlainObject>(cx, nullptr, NullPtr(), TenuredObject);
+    userFieldOffsets = NewObjectWithProto<PlainObject>(cx, NullPtr(), NullPtr(), TenuredObject);
     if (!userFieldOffsets)
         return nullptr;
 
-    userFieldTypes = NewObjectWithProto<PlainObject>(cx, nullptr, NullPtr(), TenuredObject);
+    userFieldTypes = NewObjectWithProto<PlainObject>(cx, NullPtr(), NullPtr(), TenuredObject);
     if (!userFieldTypes)
         return nullptr;
 
@@ -927,7 +927,7 @@ StructMetaTypeDescr::create(JSContext *cx,
     {
         RootedObject fieldNamesVec(cx);
         fieldNamesVec = NewDenseCopiedArray(cx, fieldNames.length(),
-                                            fieldNames.begin(), nullptr,
+                                            fieldNames.begin(), NullPtr(),
                                             TenuredObject);
         if (!fieldNamesVec)
             return nullptr;
@@ -939,7 +939,7 @@ StructMetaTypeDescr::create(JSContext *cx,
     {
         RootedObject fieldTypeVec(cx);
         fieldTypeVec = NewDenseCopiedArray(cx, fieldTypeObjs.length(),
-                                           fieldTypeObjs.begin(), nullptr,
+                                           fieldTypeObjs.begin(), NullPtr(),
                                            TenuredObject);
         if (!fieldTypeVec)
             return nullptr;
@@ -951,7 +951,7 @@ StructMetaTypeDescr::create(JSContext *cx,
     {
         RootedObject fieldOffsetsVec(cx);
         fieldOffsetsVec = NewDenseCopiedArray(cx, fieldOffsets.length(),
-                                              fieldOffsets.begin(), nullptr,
+                                              fieldOffsets.begin(), NullPtr(),
                                               TenuredObject);
         if (!fieldOffsetsVec)
             return nullptr;
@@ -1768,14 +1768,55 @@ bool
 TypedObject::obj_defineProperty(JSContext *cx, HandleObject obj, HandleId id, HandleValue v,
                                 PropertyOp getter, StrictPropertyOp setter, unsigned attrs)
 {
-    return ReportPropertyError(cx, JSMSG_UNDEFINED_PROP, id);
+    Rooted<TypedObject *> typedObj(cx, &obj->as<TypedObject>());
+    return ReportTypedObjTypeError(cx, JSMSG_OBJECT_NOT_EXTENSIBLE, typedObj);
+}
+
+bool
+TypedObject::obj_hasProperty(JSContext *cx, HandleObject obj, HandleId id, bool *foundp)
+{
+    Rooted<TypedObject *> typedObj(cx, &obj->as<TypedObject>());
+    switch (typedObj->typeDescr().kind()) {
+      case type::Scalar:
+      case type::Reference:
+      case type::Simd:
+        break;
+
+      case type::Array: {
+        if (JSID_IS_ATOM(id, cx->names().length)) {
+            *foundp = true;
+            return true;
+        }
+        uint32_t index;
+        // Elements are not inherited from the prototype.
+        if (js_IdIsIndex(id, &index)) {
+            *foundp = (index < uint32_t(typedObj->length()));
+            return true;
+        }
+        break;
+      }
+
+      case type::Struct:
+        size_t index;
+        if (typedObj->typeDescr().as<StructTypeDescr>().fieldIndex(id, &index)) {
+            *foundp = true;
+            return true;
+        }
+    }
+
+    RootedObject proto(cx, obj->getProto());
+    if (!proto) {
+        *foundp = false;
+        return true;
+    }
+
+    return HasProperty(cx, proto, id, foundp);
 }
 
 bool
 TypedObject::obj_getProperty(JSContext *cx, HandleObject obj, HandleObject receiver,
                              HandleId id, MutableHandleValue vp)
 {
-    MOZ_ASSERT(obj->is<TypedObject>());
     Rooted<TypedObject *> typedObj(cx, &obj->as<TypedObject>());
 
     // Dispatch elements to obj_getElement:
@@ -1864,6 +1905,7 @@ TypedObject::obj_getArrayElement(JSContext *cx,
                                  uint32_t index,
                                  MutableHandleValue vp)
 {
+    // Elements are not inherited from the prototype.
     if (index >= (size_t) typedObj->length()) {
         vp.setUndefined();
         return true;
@@ -1875,15 +1917,10 @@ TypedObject::obj_getArrayElement(JSContext *cx,
 }
 
 bool
-TypedObject::obj_setProperty(JSContext *cx, HandleObject obj, HandleId id,
+TypedObject::obj_setProperty(JSContext *cx, HandleObject obj, HandleObject receiver, HandleId id,
                              MutableHandleValue vp, bool strict)
 {
-    MOZ_ASSERT(obj->is<TypedObject>());
     Rooted<TypedObject *> typedObj(cx, &obj->as<TypedObject>());
-
-    uint32_t index;
-    if (js_IdIsIndex(id, &index))
-        return obj_setElement(cx, obj, index, vp, strict);
 
     switch (typedObj->typeDescr().kind()) {
       case type::Scalar:
@@ -1893,13 +1930,34 @@ TypedObject::obj_setProperty(JSContext *cx, HandleObject obj, HandleId id,
       case type::Simd:
         break;
 
-      case type::Array:
+      case type::Array: {
         if (JSID_IS_ATOM(id, cx->names().length)) {
-            JS_ReportErrorNumber(cx, js_GetErrorMessage,
-                                 nullptr, JSMSG_CANT_REDEFINE_ARRAY_LENGTH);
-            return false;
+            if (obj == receiver) {
+                JS_ReportErrorNumber(cx, js_GetErrorMessage,
+                                     nullptr, JSMSG_CANT_REDEFINE_ARRAY_LENGTH);
+                return false;
+            }
+            return SetNonWritableProperty(cx, id, strict);
+        }
+
+        uint32_t index;
+        if (js_IdIsIndex(id, &index)) {
+            if (obj != receiver)
+                return SetPropertyByDefining(cx, obj, receiver, id, vp, strict, false);
+
+            if (index >= uint32_t(typedObj->length())) {
+                JS_ReportErrorNumber(cx, js_GetErrorMessage,
+                                     nullptr, JSMSG_TYPEDOBJECT_BINARYARRAY_BAD_INDEX);
+                return false;
+            }
+
+            Rooted<TypeDescr*> elementType(cx);
+            elementType = &typedObj->typeDescr().as<ArrayTypeDescr>().elementType();
+            size_t offset = elementType->size() * index;
+            return ConvertAndCopyTo(cx, elementType, typedObj, offset, NullPtr(), vp);
         }
         break;
+      }
 
       case type::Struct: {
         Rooted<StructTypeDescr*> descr(cx, &typedObj->typeDescr().as<StructTypeDescr>());
@@ -1908,6 +1966,9 @@ TypedObject::obj_setProperty(JSContext *cx, HandleObject obj, HandleId id,
         if (!descr->fieldIndex(id, &fieldIndex))
             break;
 
+        if (obj != receiver)
+            return SetPropertyByDefining(cx, obj, receiver, id, vp, strict, false);
+
         size_t offset = descr->fieldOffset(fieldIndex);
         Rooted<TypeDescr*> fieldType(cx, &descr->fieldDescr(fieldIndex));
         RootedAtom fieldName(cx, &descr->fieldName(fieldIndex));
@@ -1915,48 +1976,7 @@ TypedObject::obj_setProperty(JSContext *cx, HandleObject obj, HandleId id,
       }
     }
 
-    return ReportTypedObjTypeError(cx, JSMSG_OBJECT_NOT_EXTENSIBLE, typedObj);
-}
-
-bool
-TypedObject::obj_setElement(JSContext *cx, HandleObject obj, uint32_t index,
-                            MutableHandleValue vp, bool strict)
-{
-    MOZ_ASSERT(obj->is<TypedObject>());
-    Rooted<TypedObject *> typedObj(cx, &obj->as<TypedObject>());
-    Rooted<TypeDescr *> descr(cx, &typedObj->typeDescr());
-
-    switch (descr->kind()) {
-      case type::Scalar:
-      case type::Reference:
-      case type::Simd:
-      case type::Struct:
-        break;
-
-      case type::Array:
-        return obj_setArrayElement(cx, typedObj, descr, index, vp);
-    }
-
-    return ReportTypedObjTypeError(cx, JSMSG_OBJECT_NOT_EXTENSIBLE, typedObj);
-}
-
-/*static*/ bool
-TypedObject::obj_setArrayElement(JSContext *cx,
-                                Handle<TypedObject*> typedObj,
-                                Handle<TypeDescr*> descr,
-                                uint32_t index,
-                                MutableHandleValue vp)
-{
-    if (index >= (size_t) typedObj->length()) {
-        JS_ReportErrorNumber(cx, js_GetErrorMessage,
-                             nullptr, JSMSG_TYPEDOBJECT_BINARYARRAY_BAD_INDEX);
-        return false;
-    }
-
-    Rooted<TypeDescr*> elementType(cx);
-    elementType = &descr->as<ArrayTypeDescr>().elementType();
-    size_t offset = elementType->size() * index;
-    return ConvertAndCopyTo(cx, elementType, typedObj, offset, NullPtr(), vp);
+    return SetPropertyOnProto(cx, obj, receiver, id, vp, strict);
 }
 
 bool
@@ -2314,6 +2334,7 @@ LazyArrayBufferTable::sizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf)
         {                                                \
             TypedObject::obj_lookupProperty,             \
             TypedObject::obj_defineProperty,             \
+            TypedObject::obj_hasProperty,                \
             TypedObject::obj_getProperty,                \
             TypedObject::obj_setProperty,                \
             TypedObject::obj_getOwnPropertyDescriptor,   \

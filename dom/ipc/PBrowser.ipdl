@@ -267,15 +267,18 @@ parent:
     /**
      * Instructs chrome to end any pending composition
      *
-     *  cancel       PR_TRUE if composition should be cancelled
+     *  cancel       true if composition should be cancelled
+     *  noCompositionEvent   true if no composition event is fired by commit or
+     *                       cancel
      *  composition  Text to commit before ending the composition
      *
-     *  if cancel is PR_TRUE,
+     *  if cancel is true,
      *    widget should return empty string for composition
-     *  if cancel is PR_FALSE,
+     *  if cancel is false,
      *    widget should return the current composition text
      */
-    prio(urgent) sync EndIMEComposition(bool cancel) returns (nsString composition);
+    prio(urgent) sync EndIMEComposition(bool cancel)
+                        returns (bool noCompositionEvent, nsString composition);
 
     /**
      * Request that the parent process move focus to the browser's frame. If
@@ -517,7 +520,12 @@ child:
                int32_t aModifiers,
                bool aIgnoreRootScrollFrame);
 
-    RealMouseEvent(WidgetMouseEvent event);
+    /**
+     * When two consecutive mouse move events would be added to the message queue,
+     * they are 'compressed' by dumping the oldest one.
+     */
+    RealMouseMoveEvent(WidgetMouseEvent event) compress;
+    RealMouseButtonEvent(WidgetMouseEvent event);
     RealKeyEvent(WidgetKeyboardEvent event, MaybeNativeKeyBinding keyBinding);
     MouseWheelEvent(WidgetWheelEvent event, ScrollableLayerGuid aGuid, uint64_t aInputBlockId);
     RealTouchEvent(WidgetTouchEvent aEvent, ScrollableLayerGuid aGuid, uint64_t aInputBlockId);

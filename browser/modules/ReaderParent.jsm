@@ -26,10 +26,10 @@ let ReaderParent = {
     "Reader:ListStatusRequest",
     "Reader:RemoveFromList",
     "Reader:Share",
-    "Reader:ShowToast",
-    "Reader:ToolbarVisibility",
     "Reader:SystemUIVisibility",
     "Reader:UpdateReaderButton",
+    "Reader:SetIntPref",
+    "Reader:SetCharPref",
   ],
 
   init: function() {
@@ -70,15 +70,7 @@ let ReaderParent = {
         // XXX: To implement.
         break;
 
-      case "Reader:ShowToast":
-        // XXX: To implement.
-        break;
-
       case "Reader:SystemUIVisibility":
-        // XXX: To implement.
-        break;
-
-      case "Reader:ToolbarVisibility":
         // XXX: To implement.
         break;
 
@@ -88,6 +80,18 @@ let ReaderParent = {
           browser.isArticle = message.data.isArticle;
         }
         this.updateReaderButton(browser);
+        break;
+      }
+      case "Reader:SetIntPref": {
+        if (message.data && message.data.name !== undefined) {
+          Services.prefs.setIntPref(message.data.name, message.data.value);
+        }
+        break;
+      }
+      case "Reader:SetCharPref": {
+        if (message.data && message.data.name !== undefined) {
+          Services.prefs.setCharPref(message.data.name, message.data.value);
+        }
         break;
       }
     }
@@ -103,10 +107,10 @@ let ReaderParent = {
     if (browser.currentURI.spec.startsWith("about:reader")) {
       button.setAttribute("readeractive", true);
       button.hidden = false;
-      button.setAttribute("tooltiptext", gStringBundle.GetStringFromName("readerMode.exit"));
+      button.setAttribute("tooltiptext", gStringBundle.GetStringFromName("readerView.exit"));
     } else {
       button.removeAttribute("readeractive");
-      button.setAttribute("tooltiptext", gStringBundle.GetStringFromName("readerMode.enter"));
+      button.setAttribute("tooltiptext", gStringBundle.GetStringFromName("readerView.enter"));
       button.hidden = !browser.isArticle;
     }
   },
@@ -122,23 +126,37 @@ let ReaderParent = {
 
     let win = event.target.ownerDocument.defaultView;
     let url = win.gBrowser.selectedBrowser.currentURI.spec;
+
     if (url.startsWith("about:reader")) {
-      win.openUILinkIn(this._getOriginalUrl(url), "current");
+      let originalURL = this._getOriginalUrl(url);
+      if (!originalURL) {
+        Cu.reportError("Error finding original URL for about:reader URL: " + url);
+      } else {
+        win.openUILinkIn(originalURL, "current");
+      }
     } else {
       win.openUILinkIn("about:reader?url=" + encodeURIComponent(url), "current");
     }
+  },
+
+  parseReaderUrl: function(url) {
+    if (!url.startsWith("about:reader?")) {
+      return null;
+    }
+    return this._getOriginalUrl(url);
   },
 
   /**
    * Returns original URL from an about:reader URL.
    *
    * @param url An about:reader URL.
+   * @return The original URL for the article, or null if we did not find
+   *         a properly formatted about:reader URL.
    */
   _getOriginalUrl: function(url) {
-    let searchParams = new URLSearchParams(url.split("?")[1]);
+    let searchParams = new URLSearchParams(url.substring("about:reader?".length));
     if (!searchParams.has("url")) {
-      Cu.reportError("Error finding original URL for about:reader URL: " + url);
-      return url;
+      return null;
     }
     return decodeURIComponent(searchParams.get("url"));
   },

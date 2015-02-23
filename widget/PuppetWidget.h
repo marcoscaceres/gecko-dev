@@ -21,7 +21,6 @@
 #include "nsBaseWidget.h"
 #include "nsIScreenManager.h"
 #include "nsThreadUtils.h"
-#include "nsWeakReference.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/EventForwards.h"
 
@@ -37,8 +36,7 @@ namespace widget {
 
 struct AutoCacheNativeKeyCommands;
 
-class PuppetWidget : public nsBaseWidget,
-                     public nsSupportsWeakReference
+class PuppetWidget : public nsBaseWidget
 {
   typedef mozilla::dom::TabChild TabChild;
   typedef mozilla::gfx::DrawTarget DrawTarget;
@@ -197,6 +195,12 @@ public:
 
   // Get the screen position of the application window.
   nsIntPoint GetWindowPosition();
+
+  NS_IMETHOD StartPluginIME(const mozilla::WidgetKeyboardEvent& aKeyboardEvent,
+                            int32_t aPanelX, int32_t aPanelY,
+                            nsString& aCommitted) MOZ_OVERRIDE;
+
+  NS_IMETHOD SetPluginFocused(bool& aFocused) MOZ_OVERRIDE;
 
 protected:
   bool mEnabled;

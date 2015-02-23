@@ -18,6 +18,7 @@
 #include "nsIObserver.h"
 #include "nsIWidgetListener.h"
 #include "nsPIDOMWindow.h"
+#include "nsWeakReference.h"
 #include <algorithm>
 class nsIContent;
 class nsAutoRollup;
@@ -79,7 +80,7 @@ public:
  * class, but it gives them a head start.)
  */
 
-class nsBaseWidget : public nsIWidget
+class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference
 {
   friend class nsAutoRollup;
 
@@ -199,6 +200,12 @@ public:
   virtual nsresult        ActivateNativeMenuItemAt(const nsAString& indexString) MOZ_OVERRIDE { return NS_ERROR_NOT_IMPLEMENTED; }
   virtual nsresult        ForceUpdateNativeMenuAt(const nsAString& indexString) MOZ_OVERRIDE { return NS_ERROR_NOT_IMPLEMENTED; }
   NS_IMETHOD              NotifyIME(const IMENotification& aIMENotification) MOZ_OVERRIDE MOZ_FINAL;
+  NS_IMETHOD              StartPluginIME(const mozilla::WidgetKeyboardEvent& aKeyboardEvent,
+                                         int32_t aPanelX, int32_t aPanelY,
+                                         nsString& aCommitted) MOZ_OVERRIDE
+                          { return NS_ERROR_NOT_IMPLEMENTED; }
+  NS_IMETHOD              SetPluginFocused(bool& aFocused) MOZ_OVERRIDE
+                          { return NS_ERROR_NOT_IMPLEMENTED; }
   NS_IMETHOD              AttachNativeKeyEvent(mozilla::WidgetKeyboardEvent& aEvent) MOZ_OVERRIDE { return NS_ERROR_NOT_IMPLEMENTED; }
   NS_IMETHOD_(bool)       ExecuteNativeKeyBinding(
                             NativeKeyBindingsType aType,

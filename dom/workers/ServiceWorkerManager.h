@@ -49,6 +49,7 @@ class ServiceWorkerJobQueue;
 
 class ServiceWorkerJob : public nsISupports
 {
+protected:
   // The queue keeps the jobs alive, so they can hold a rawptr back to the
   // queue.
   ServiceWorkerJobQueue* mQueue;
@@ -151,7 +152,6 @@ public:
   // removed since documents may be controlled. It is marked as
   // pendingUninstall and when all controlling documents go away, removed.
   bool mPendingUninstall;
-  bool mWaitingToActivate;
 
   explicit ServiceWorkerRegistrationInfo(const nsACString& aScope,
                                          nsIPrincipal* aPrincipal);
@@ -289,13 +289,11 @@ class ServiceWorkerManager MOZ_FINAL
   : public nsIServiceWorkerManager
   , public nsIIPCBackgroundChildCreateCallback
 {
-  friend class ActivationRunnable;
-  friend class ServiceWorkerRegistrationInfo;
-  friend class ServiceWorkerRegisterJob;
   friend class GetReadyPromiseRunnable;
   friend class GetRegistrationsRunnable;
   friend class GetRegistrationRunnable;
-  friend class QueueFireUpdateFoundRunnable;
+  friend class ServiceWorkerRegisterJob;
+  friend class ServiceWorkerRegistrationInfo;
   friend class ServiceWorkerUnregisterJob;
 
 public:
@@ -349,6 +347,8 @@ public:
   void
   RemoveRegistration(ServiceWorkerRegistrationInfo* aRegistration)
   {
+    MOZ_ASSERT(aRegistration);
+    MOZ_ASSERT(!aRegistration->IsControllingDocuments());
     MOZ_ASSERT(mServiceWorkerRegistrationInfos.Contains(aRegistration->mScope));
     ServiceWorkerManager::RemoveScope(mOrderedScopes, aRegistration->mScope);
     mServiceWorkerRegistrationInfos.Remove(aRegistration->mScope);
@@ -380,8 +380,8 @@ public:
               uint32_t aFlags);
 
   void
-  GetServicedClients(const nsCString& aScope,
-                     nsTArray<uint64_t>* aControlledDocuments);
+  GetAllClients(const nsCString& aScope,
+                nsTArray<uint64_t>* aControlledDocuments);
 
   static already_AddRefed<ServiceWorkerManager>
   GetInstance();
@@ -398,6 +398,9 @@ private:
 
   nsresult
   Update(ServiceWorkerRegistrationInfo* aRegistration);
+
+  nsresult
+  GetDocumentRegistration(nsIDocument* aDoc, ServiceWorkerRegistrationInfo** aRegistrationInfo);
 
   NS_IMETHOD
   CreateServiceWorkerForWindow(nsPIDOMWindow* aWindow,
@@ -491,6 +494,9 @@ private:
                                       void* aUnused);
 
   nsClassHashtable<nsISupportsHashKey, PendingReadyPromise> mPendingReadyPromises;
+ 
+  void
+  MaybeRemoveRegistration(ServiceWorkerRegistrationInfo* aRegistration);
 
   mozilla::ipc::PBackgroundChild* mActor;
 

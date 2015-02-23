@@ -56,9 +56,10 @@ let AboutReader = function(mm, win) {
   doc.addEventListener("visibilitychange", this, false);
 
   this._setupStyleDropdown();
-  this._setupButton("close-button", this._onReaderClose.bind(this));
-  this._setupButton("toggle-button", this._onReaderToggle.bind(this));
-  this._setupButton("share-button", this._onShare.bind(this));
+  this._setupButton("close-button", this._onReaderClose.bind(this), "aboutReader.toolbar.close");
+  this._setupButton("toggle-button", this._onReaderToggle.bind(this), "aboutReader.toolbar.addToReadingList");
+  this._setupButton("share-button", this._onShare.bind(this), "aboutReader.toolbar.share");
+  this._setupButton("list-button", this._onList.bind(this), "aboutReader.toolbar.openReadingList");
 
   let colorSchemeValues = JSON.parse(Services.prefs.getCharPref("reader.color_scheme.values"));
   let colorSchemeOptions = colorSchemeValues.map((value) => {
@@ -72,13 +73,17 @@ let AboutReader = function(mm, win) {
   this._setColorSchemePref(colorScheme);
 
   let fontTypeSample = gStrings.GetStringFromName("aboutReader.fontTypeSample");
-  let fontTypeValues = JSON.parse(Services.prefs.getCharPref("reader.font_type.values"));
-  let fontTypeOptions = fontTypeValues.map((value) => {
-    return { name: fontTypeSample,
-             description: gStrings.GetStringFromName("aboutReader.fontType." + value),
-             value: value,
-             linkClass: value };
-  });
+  let fontTypeOptions = [
+    { name: fontTypeSample,
+      description: gStrings.GetStringFromName("aboutReader.fontType.serif"),
+      value: "serif",
+      linkClass: "serif" },
+    { name: fontTypeSample,
+      description: gStrings.GetStringFromName("aboutReader.fontType.sans-serif"),
+      value: "sans-serif",
+      linkClass: "sans-serif"
+    },
+  ];
 
   let fontType = Services.prefs.getCharPref("reader.font_type");
   this._setupSegmentedButton("font-type-buttons", fontTypeOptions, fontType, this._setFontType.bind(this));
@@ -221,12 +226,14 @@ AboutReader.prototype = {
   },
 
   _updateToggleButton: function Reader_updateToggleButton() {
-    let classes = this._doc.getElementById("toggle-button").classList;
+    let button = this._doc.getElementById("toggle-button");
 
     if (this._isReadingListItem == 1) {
-      classes.add("on");
+      button.classList.add("on");
+      button.setAttribute("title", gStrings.GetStringFromName("aboutReader.toolbar.removeFromReadingList"));
     } else {
-      classes.remove("on");
+      button.classList.remove("on");
+      button.setAttribute("title", gStrings.GetStringFromName("aboutReader.toolbar.addToReadingList"));
     }
   },
 
@@ -281,6 +288,10 @@ AboutReader.prototype = {
     UITelemetry.addEvent("share.1", "list", null);
   },
 
+  _onList: function() {
+    // To be implemented (bug 1132665)
+  },
+
   _setFontSize: function Reader_setFontSize(newFontSize) {
     let htmlClasses = this._doc.documentElement.classList;
 
@@ -290,7 +301,10 @@ AboutReader.prototype = {
     this._fontSize = newFontSize;
     htmlClasses.add("font-size" + this._fontSize);
 
-    Services.prefs.setIntPref("reader.font_size", this._fontSize);
+    this._mm.sendAsyncMessage("Reader:SetIntPref", {
+      name: "reader.font_size",
+      value: this._fontSize
+    });
   },
 
   _handleDeviceLight: function Reader_handleDeviceLight(newLux) {
@@ -381,7 +395,10 @@ AboutReader.prototype = {
     this._enableAmbientLighting(colorSchemePref === "auto");
     this._setColorScheme(colorSchemePref);
 
-    Services.prefs.setCharPref("reader.color_scheme", colorSchemePref);
+    this._mm.sendAsyncMessage("Reader:SetCharPref", {
+      name: "reader.color_scheme",
+      value: colorSchemePref
+    });
   },
 
   _setFontType: function Reader_setFontType(newFontType) {
@@ -396,7 +413,10 @@ AboutReader.prototype = {
     this._fontType = newFontType;
     bodyClasses.add(this._fontType);
 
-    Services.prefs.setCharPref("reader.font_type", this._fontType);
+    this._mm.sendAsyncMessage("Reader:SetCharPref", {
+      name: "reader.font_type",
+      value: this._fontType
+    });
   },
 
   _getToolbarVisibility: function Reader_getToolbarVisibility() {
@@ -420,22 +440,13 @@ AboutReader.prototype = {
     this._toolbarElement.classList.toggle("toolbar-hidden");
     this._setSystemUIVisibility(visible);
 
-    if (!visible && !this._hasUsedToolbar) {
-      this._hasUsedToolbar = Services.prefs.getBoolPref("reader.has_used_toolbar");
-      if (!this._hasUsedToolbar) {
-        this._mm.sendAsyncMessage("Reader:ShowToast", { toast: gStrings.GetStringFromName("aboutReader.toolbarTip") });
-        Services.prefs.setBoolPref("reader.has_used_toolbar", true);
-        this._hasUsedToolbar = true;
-      }
+    if (!visible) {
+      this._mm.sendAsyncMessage("Reader:ToolbarHidden");
     }
   },
 
   _toggleToolbarVisibility: function Reader_toggleToolbarVisibility() {
     this._setToolbarVisibility(!this._getToolbarVisibility());
-  },
-
-  _setBrowserToolbarVisiblity: function Reader_setBrowserToolbarVisiblity(visible) {
-    this._mm.sendAsyncMessage("Reader:ToolbarVisibility", { visible: visible });
   },
 
   _setSystemUIVisibility: function Reader_setSystemUIVisibility(visible) {
@@ -686,8 +697,9 @@ AboutReader.prototype = {
     }
   },
 
-  _setupButton: function Reader_setupButton(id, callback) {
+  _setupButton: function Reader_setupButton(id, callback, titleEntity) {
     let button = this._doc.getElementById(id);
+    button.setAttribute("title", gStrings.GetStringFromName(titleEntity));
 
     button.addEventListener("click", function(aEvent) {
       if (!aEvent.isTrusted)
@@ -737,6 +749,7 @@ AboutReader.prototype = {
       win.setTimeout(updatePopupPosition, 0);
     }, true);
 
+    dropdownToggle.setAttribute("title", gStrings.GetStringFromName("aboutReader.toolbar.typeControls"));
     dropdownToggle.addEventListener("click", event => {
       if (!event.isTrusted)
         return;

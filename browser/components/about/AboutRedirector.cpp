@@ -120,6 +120,7 @@ static RedirEntry kRedirMap[] = {
   { "reader", "chrome://global/content/reader/aboutReader.html",
     nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
     nsIAboutModule::ALLOW_SCRIPT |
+    nsIAboutModule::URI_MUST_LOAD_IN_CHILD |
     nsIAboutModule::HIDE_FROM_ABOUTABOUT },
 };
 static const int kRedirTotal = ArrayLength(kRedirMap);
@@ -163,18 +164,9 @@ AboutRedirector::NewChannel(nsIURI* aURI,
       rv = NS_NewURI(getter_AddRefs(tempURI),
                      nsDependentCString(kRedirMap[i].url));
       NS_ENSURE_SUCCESS(rv, rv);
-      // Bug 1087720 (and Bug 1099296):
-      // Once all callsites have been updated to call NewChannel2()
-      // instead of NewChannel() we should have a non-null loadInfo
-      // consistently. Until then we have to branch on the loadInfo.
-      if (aLoadInfo) {
-        rv = NS_NewChannelInternal(getter_AddRefs(tempChannel),
-                                   tempURI,
-                                   aLoadInfo);
-      }
-      else {
-        rv = ioService->NewChannelFromURI(tempURI, getter_AddRefs(tempChannel));
-      }
+      rv = NS_NewChannelInternal(getter_AddRefs(tempChannel),
+                                 tempURI,
+                                 aLoadInfo);
       NS_ENSURE_SUCCESS(rv, rv);
 
       tempChannel->SetOriginalURI(aURI);

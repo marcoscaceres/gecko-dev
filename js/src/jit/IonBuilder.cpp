@@ -1730,6 +1730,8 @@ IonBuilder::inspectOpcode(JSOp op)
         return jsop_initelem_array();
 
       case JSOP_INITPROP:
+      case JSOP_INITLOCKEDPROP:
+      case JSOP_INITHIDDENPROP:
       {
         PropertyName *name = info().getAtom(pc)->asPropertyName();
         return jsop_initprop(name);
@@ -4432,7 +4434,7 @@ IonBuilder::inlineScriptedCall(CallInfo &callInfo, JSFunction *target)
     callInfo.pushFormals(current);
 
     MResumePoint *outerResumePoint =
-        MResumePoint::New(alloc(), current, pc, callerResumePoint_, MResumePoint::Outer);
+        MResumePoint::New(alloc(), current, pc, MResumePoint::Outer);
     if (!outerResumePoint)
         return false;
     current->setOuterResumePoint(outerResumePoint);
@@ -5089,7 +5091,7 @@ IonBuilder::inlineObjectGroupFallback(CallInfo &callInfo, MBasicBlock *dispatchB
 
     // Capture stack prior to the call operation. This captures the function.
     MResumePoint *preCallResumePoint =
-        MResumePoint::New(alloc(), dispatchBlock, pc, callerResumePoint_, MResumePoint::ResumeAt);
+        MResumePoint::New(alloc(), dispatchBlock, pc, MResumePoint::ResumeAt);
     if (!preCallResumePoint)
         return false;
 
@@ -6381,7 +6383,7 @@ IonBuilder::jsop_initprop(PropertyName *name)
 
     bool useSlowPath = false;
 
-    if (obj->isUnknownValue()) {
+    if (obj->isUnknownValue() || obj->isLambda()) {
         useSlowPath = true;
     } else {
         templateObject = obj->toNewObject()->templateObject();
@@ -6771,7 +6773,7 @@ IonBuilder::resume(MInstruction *ins, jsbytecode *pc, MResumePoint::Mode mode)
 {
     MOZ_ASSERT(ins->isEffectful() || !ins->isMovable());
 
-    MResumePoint *resumePoint = MResumePoint::New(alloc(), ins->block(), pc, callerResumePoint_,
+    MResumePoint *resumePoint = MResumePoint::New(alloc(), ins->block(), pc,
                                                   mode);
     if (!resumePoint)
         return false;
@@ -7112,6 +7114,10 @@ IonBuilder::ensureDefiniteType(MDefinition *def, MIRType definiteType)
 
       default: {
         if (def->type() != MIRType_Value) {
+            if (def->type() == MIRType_Int32 && definiteType == MIRType_Double) {
+                replace = MToDouble::New(alloc(), def);
+                break;
+            }
             MOZ_ASSERT(def->type() == definiteType);
             return def;
         }
@@ -9589,7 +9595,7 @@ IonBuilder::annotateGetPropertyCache(MDefinition *obj, MGetPropertyCache *getPro
     if (inlinePropTable->numEntries() > 0) {
         // Push the object back onto the stack temporarily to capture the resume point.
         current->push(obj);
-        MResumePoint *resumePoint = MResumePoint::New(alloc(), current, pc, callerResumePoint_,
+        MResumePoint *resumePoint = MResumePoint::New(alloc(), current, pc,
                                                       MResumePoint::ResumeAt);
         if (!resumePoint)
             return false;

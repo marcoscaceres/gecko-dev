@@ -691,14 +691,18 @@ MarkIdInternal(JSTracer *trc, jsid *id)
 {
     if (JSID_IS_STRING(*id)) {
         JSString *str = JSID_TO_STRING(*id);
+        JSString *prior = str;
         trc->setTracingLocation((void *)id);
         MarkInternal(trc, &str);
-        *id = NON_INTEGER_ATOM_TO_JSID(reinterpret_cast<JSAtom *>(str));
+        if (str != prior)
+            *id = NON_INTEGER_ATOM_TO_JSID(reinterpret_cast<JSAtom *>(str));
     } else if (JSID_IS_SYMBOL(*id)) {
         JS::Symbol *sym = JSID_TO_SYMBOL(*id);
+        JS::Symbol *prior = sym;
         trc->setTracingLocation((void *)id);
         MarkInternal(trc, &sym);
-        *id = SYMBOL_TO_JSID(sym);
+        if (sym != prior)
+            *id = SYMBOL_TO_JSID(sym);
     } else {
         /* Unset realLocation manually if we do not call MarkInternal. */
         trc->unsetTracingLocation();
@@ -755,14 +759,22 @@ MarkValueInternal(JSTracer *trc, Value *v)
         MOZ_ASSERT(v->toGCThing());
         void *thing = v->toGCThing();
         trc->setTracingLocation((void *)v);
-        MarkKind(trc, &thing, v->gcKind());
         if (v->isString()) {
-            v->setString((JSString *)thing);
+            JSString *str = static_cast<JSString*>(thing);
+            MarkInternal(trc, &str);
+            if (str != thing)
+                v->setString(str);
         } else if (v->isObject()) {
-            v->setObjectOrNull((JSObject *)thing);
+            JSObject *obj = static_cast<JSObject*>(thing);
+            MarkInternal(trc, &obj);
+            if (obj != thing)
+                v->setObjectOrNull(obj);
         } else {
             MOZ_ASSERT(v->isSymbol());
-            v->setSymbol((JS::Symbol *)thing);
+            JS::Symbol *sym = static_cast<JS::Symbol*>(thing);
+            MarkInternal(trc, &sym);
+            if (sym != thing)
+                v->setSymbol(sym);
         }
     } else {
         /* Unset realLocation manually if we do not call MarkInternal. */
@@ -790,11 +802,11 @@ TypeSet::MarkTypeRoot(JSTracer *trc, TypeSet::Type *v, const char *name)
 {
     JS_ROOT_MARKING_ASSERT(trc);
     trc->setTracingName(name);
-    if (v->isSingleton()) {
+    if (v->isSingletonUnchecked()) {
         JSObject *obj = v->singleton();
         MarkInternal(trc, &obj);
         *v = TypeSet::ObjectType(obj);
-    } else if (v->isGroup()) {
+    } else if (v->isGroupUnchecked()) {
         ObjectGroup *group = v->group();
         MarkInternal(trc, &group);
         *v = TypeSet::ObjectType(group);
@@ -993,24 +1005,6 @@ gc::MarkValueUnbarriered(JSTracer *trc, Value *v, const char *name)
 {
     trc->setTracingName(name);
     MarkValueInternal(trc, v);
-}
-
-bool
-gc::IsCellMarked(Cell **thingp)
-{
-    return IsMarked<Cell>(thingp);
-}
-
-bool
-gc::IsCellAboutToBeFinalized(Cell **thingp)
-{
-    return IsAboutToBeFinalized<Cell>(thingp);
-}
-
-bool
-gc::IsCellAboutToBeFinalizedFromAnyThread(Cell **thingp)
-{
-    return IsAboutToBeFinalizedFromAnyThread<Cell>(thingp);
 }
 
 /*** Push Mark Stack ***/

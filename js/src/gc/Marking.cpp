@@ -1304,8 +1304,10 @@ ScanObjectGroup(GCMarker *gcmarker, ObjectGroup *group)
     if (group->proto().isObject())
         gcmarker->traverse(group->proto().toObject());
 
-    if (group->singleton() && !group->lazy())
-        gcmarker->traverse(group->singleton());
+    group->compartment()->mark();
+
+    if (GlobalObject *global = group->compartment()->unsafeUnbarrieredMaybeGlobal())
+        PushMarkStack(gcmarker, global);
 
     if (group->newScript())
         group->newScript()->trace(gcmarker);
@@ -1337,9 +1339,6 @@ gc::MarkChildren(JSTracer *trc, ObjectGroup *group)
 
     if (group->proto().isObject())
         MarkObject(trc, &group->protoRaw(), "group_proto");
-
-    if (group->singleton() && !group->lazy())
-        MarkObject(trc, &group->singletonRaw(), "group_singleton");
 
     if (group->newScript())
         group->newScript()->trace(trc);
@@ -1679,9 +1678,6 @@ GCMarker::processMarkStackTop(SliceBudget &budget)
         ObjectGroup *group = obj->groupFromGC();
         traverse(group);
 
-        Shape *shape = obj->lastProperty();
-        PushMarkStack(this, shape);
-
         /* Call the trace hook if necessary. */
         const Class *clasp = group->clasp();
         if (clasp->trace) {
@@ -1692,11 +1688,13 @@ GCMarker::processMarkStackTop(SliceBudget &budget)
                             (!obj->compartment()->options().getTrace() || !obj->isOwnGlobal())),
                           clasp->flags & JSCLASS_IMPLEMENTS_BARRIERS);
             if (clasp->trace == InlineTypedObject::obj_trace) {
-                TypeDescr *descr = &obj->as<InlineOpaqueTypedObject>().typeDescr();
+                Shape *shape = obj->as<InlineTypedObject>().shapeFromGC();
+                PushMarkStack(this, shape);
+                TypeDescr *descr = &obj->as<InlineTypedObject>().typeDescr();
                 if (!descr->hasTraceList())
                     return;
                 unboxedTraceList = descr->traceList();
-                unboxedMemory = obj->as<InlineOpaqueTypedObject>().inlineTypedMem();
+                unboxedMemory = obj->as<InlineTypedObject>().inlineTypedMem();
                 goto scan_unboxed;
             }
             if (clasp == &UnboxedPlainObject::class_) {
@@ -1710,10 +1708,14 @@ GCMarker::processMarkStackTop(SliceBudget &budget)
             clasp->trace(this, obj);
         }
 
-        if (!shape->isNative())
+        if (!clasp->isNative())
             return;
 
         NativeObject *nobj = &obj->as<NativeObject>();
+
+        Shape *shape = nobj->lastProperty();
+        PushMarkStack(this, shape);
+
         unsigned nslots = nobj->slotSpan();
 
         do {

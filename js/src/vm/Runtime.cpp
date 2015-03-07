@@ -123,6 +123,8 @@ JSRuntime::JSRuntime(JSRuntime *parentRuntime)
     profilerSampleBufferGen_(0),
     profilerSampleBufferLapCount_(1),
     asmJSActivationStack_(nullptr),
+    asyncStackForNewActivations(nullptr),
+    asyncCauseForNewActivations(nullptr),
     parentRuntime(parentRuntime),
     interrupt_(false),
     telemetryCallback(nullptr),
@@ -852,5 +854,6 @@ JS::UpdateJSRuntimeProfilerSampleBufferGen(JSRuntime *runtime, uint32_t generati
 JS_FRIEND_API(bool)
 JS::IsProfilingEnabledForRuntime(JSRuntime *runtime)
 {
+    MOZ_ASSERT(runtime);
     return runtime->spsProfiler.enabled();
 }

@@ -58,8 +58,10 @@ class imgIContainer;
 #define NS_STYLE_IS_GOING_AWAY             0x040000000
 // See nsStyleContext::ShouldSuppressLineBreak
 #define NS_STYLE_SUPPRESS_LINEBREAK        0x080000000
+// See nsStyleContext::IsInDisplayNoneSubtree
+#define NS_STYLE_IN_DISPLAY_NONE_SUBTREE   0x100000000
 // See nsStyleContext::GetPseudoEnum
-#define NS_STYLE_CONTEXT_TYPE_SHIFT        32
+#define NS_STYLE_CONTEXT_TYPE_SHIFT        33
 
 // Additional bits for nsRuleNode's mDependentBits:
 #define NS_RULE_NODE_GC_MARK                0x02000000
@@ -1678,7 +1680,7 @@ struct nsStyleText {
            mWhiteSpace == NS_STYLE_WHITESPACE_PRE_SPACE;
   }
 
-  bool NewlineIsSignificant() const {
+  bool NewlineIsSignificantStyle() const {
     return mWhiteSpace == NS_STYLE_WHITESPACE_PRE ||
            mWhiteSpace == NS_STYLE_WHITESPACE_PRE_WRAP ||
            mWhiteSpace == NS_STYLE_WHITESPACE_PRE_LINE;
@@ -1712,9 +1714,10 @@ struct nsStyleText {
   inline nsCSSShadowArray* GetTextShadow() const;
 
   // The aContextFrame argument on each of these is the frame this
-  // style struct is for.  If the frame is for SVG text, the return
-  // value will be massaged to be something that makes sense for
-  // SVG text.
+  // style struct is for.  If the frame is for SVG text or inside ruby,
+  // the return value will be massaged to be something that makes sense
+  // for those cases.
+  inline bool NewlineIsSignificant(const nsIFrame* aContextFrame) const;
   inline bool WhiteSpaceCanWrap(const nsIFrame* aContextFrame) const;
   inline bool WordCanWrap(const nsIFrame* aContextFrame) const;
 };

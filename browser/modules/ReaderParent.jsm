@@ -13,6 +13,7 @@ Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/Task.jsm");
 
+XPCOMUtils.defineLazyModuleGetter(this, "PlacesUtils","resource://gre/modules/PlacesUtils.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "ReaderMode", "resource://gre/modules/ReaderMode.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "ReadingList", "resource:///modules/readinglist/ReadingList.jsm");
 
@@ -56,11 +57,22 @@ let ReaderParent = {
         break;
 
       case "Reader:FaviconRequest": {
-        // XXX: To implement.
+        if (message.target.messageManager) {
+          let faviconUrl = PlacesUtils.promiseFaviconLinkUrl(message.data.url);
+          faviconUrl.then(function onResolution(favicon) {
+            message.target.messageManager.sendAsyncMessage("Reader:FaviconReturn", {
+              url: message.data.url,
+              faviconUrl: favicon.path.replace(/^favicon:/, "")
+            })
+          },
+          function onRejection(reason) {
+            Cu.reportError("Error requesting favicon URL for about:reader content: " + reason);
+          }).catch(Cu.reportError);
+        }
         break;
       }
       case "Reader:ListStatusRequest":
-        ReadingList.containsURL(message.data.url).then(inList => {
+        ReadingList.hasItemForURL(message.data.url).then(inList => {
           let mm = message.target.messageManager
           // Make sure the target browser is still alive before trying to send data back.
           if (mm) {
@@ -72,7 +84,7 @@ let ReaderParent = {
 
       case "Reader:RemoveFromList":
         // We need to get the "real" item to delete it.
-        ReadingList.getItemForURL(message.data.url).then(item => {
+        ReadingList.itemForURL(message.data.url).then(item => {
           ReadingList.deleteItem(item)
         });
         break;
@@ -115,26 +127,26 @@ let ReaderParent = {
     }
 
     let button = win.document.getElementById("reader-mode-button");
+    let command = win.document.getElementById("View:ReaderView");
     if (browser.currentURI.spec.startsWith("about:reader")) {
       button.setAttribute("readeractive", true);
       button.hidden = false;
-      button.setAttribute("tooltiptext", gStringBundle.GetStringFromName("readerView.close"));
+      let closeText = gStringBundle.GetStringFromName("readerView.close");
+      button.setAttribute("tooltiptext", closeText);
+      command.setAttribute("label", closeText);
+      command.setAttribute("hidden", false);
     } else {
       button.removeAttribute("readeractive");
-      button.setAttribute("tooltiptext", gStringBundle.GetStringFromName("readerView.enter"));
       button.hidden = !browser.isArticle;
+      let enterText = gStringBundle.GetStringFromName("readerView.enter");
+      button.setAttribute("tooltiptext", enterText);
+      command.setAttribute("label", enterText);
+      command.setAttribute("hidden", !browser.isArticle);
     }
+    command.setAttribute("accesskey", gStringBundle.GetStringFromName("readerView.accesskey"));
   },
 
-  handleReaderButtonEvent: function(event) {
-    event.stopPropagation();
-
-    if ((event.type == "click" && event.button != 0) ||
-        (event.type == "keypress" && event.charCode != Ci.nsIDOMKeyEvent.DOM_VK_SPACE &&
-         event.keyCode != Ci.nsIDOMKeyEvent.DOM_VK_RETURN)) {
-      return; // Left click, space or enter only
-    }
-
+  toggleReaderMode: function(event) {
     let win = event.target.ownerDocument.defaultView;
     let browser = win.gBrowser.selectedBrowser;
     let url = browser.currentURI.spec;

@@ -1,3 +1,5 @@
+var seenIndex = false;
+
 onfetch = function(ev) {
   if (ev.request.url.contains("synthesized.txt")) {
     ev.respondWith(Promise.resolve(
@@ -19,6 +21,10 @@ onfetch = function(ev) {
         }
       })
     ));
+  }
+
+  else if (ev.request.url.contains("test-respondwith-response.txt")) {
+    ev.respondWith(new Response("test-respondwith-response response body", {}));
   }
 
   else if (ev.request.url.contains("ignored.txt")) {
@@ -91,5 +97,67 @@ onfetch = function(ev) {
     ev.respondWith(Promise.resolve(
       new Response("check_intercepted_script();", {})
     ));
+  }
+
+  else if (ev.request.url.contains("deliver-gzip")) {
+    // Don't handle the request, this will make Necko perform a network request, at
+    // which point SetApplyConversion must be re-enabled, otherwise the request
+    // will fail.
+    return;
+  }
+
+  else if (ev.request.url.contains("hello.gz")) {
+    ev.respondWith(fetch("fetch/deliver-gzip.sjs"));
+  }
+
+  else if (ev.request.url.contains("hello-after-extracting.gz")) {
+    ev.respondWith(fetch("fetch/deliver-gzip.sjs").then(function(res) {
+      return res.text().then(function(body) {
+        return new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
+      });
+    }));
+  }
+
+  else if (ev.request.url.contains('opaque-on-same-origin')) {
+    var url = 'http://example.com/tests/dom/base/test/file_CrossSiteXHR_server.sjs?status=200';
+    ev.respondWith(fetch(url, { mode: 'no-cors' }));
+  }
+
+  else if (ev.request.url.contains('opaque-no-cors')) {
+    if (ev.request.mode != "no-cors") {
+      ev.respondWith(Promise.reject());
+      return;
+    }
+
+    var url = 'http://example.com/tests/dom/base/test/file_CrossSiteXHR_server.sjs?status=200';
+    ev.respondWith(fetch(url, { mode: ev.request.mode }));
+  }
+
+  else if (ev.request.url.contains('cors-for-no-cors')) {
+    if (ev.request.mode != "no-cors") {
+      ev.respondWith(Promise.reject());
+      return;
+    }
+
+    var url = 'http://example.com/tests/dom/base/test/file_CrossSiteXHR_server.sjs?status=200&allowOrigin=*';
+    ev.respondWith(fetch(url));
+  }
+
+  else if (ev.request.url.contains('example.com')) {
+    ev.respondWith(fetch(ev.request));
+  }
+
+  else if (ev.request.url.contains("index.html")) {
+    if (seenIndex) {
+        var body = "<script>" +
+                     "opener.postMessage({status: 'ok', result: " + ev.isReload + "," +
+                                         "message: 'reload status should be indicated'}, '*');" +
+                     "opener.postMessage({status: 'done'}, '*');" +
+                   "</script>";
+        ev.respondWith(new Response(body, {headers: {'Content-Type': 'text/html'}}));
+    } else {
+      seenIndex = true;
+      ev.respondWith(fetch(ev.request.url));
+    }
   }
 }

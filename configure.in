@@ -288,7 +288,7 @@ if test -n "$gonkdir" ; then
         AC_DEFINE(MOZ_AUDIO_OFFLOAD)
         MOZ_FMP4=1
         ;;
-    21)
+    21|22)
         GONK_INCLUDES="-I$gonkdir/frameworks/native/include -I$gonkdir/frameworks/av/include -I$gonkdir/frameworks/av/include/media -I$gonkdir/frameworks/av/include/camera -I$gonkdir/frameworks/native/include/media/openmax -I$gonkdir/frameworks/av/media/libstagefright/include"
         MOZ_AUDIO_OFFLOAD=1
         MOZ_OMX_DECODER=1
@@ -6962,6 +6962,7 @@ elif test "$GNU_CC"; then
     # -Wmaybe-uninitialized - too many false positives
     # -Wdeprecated-declarations - we don't want our builds held hostage when a
     #   platform-specific API becomes deprecated.
+    # -Wfree-nonheap-object - false positives during PGO
     MOZ_C_SUPPORTS_WARNING(-W, no-error=uninitialized, ac_c_has_noerror_uninitialized)
     MOZ_CXX_SUPPORTS_WARNING(-W, no-error=uninitialized, ac_cxx_has_noerror_uninitialized)
     MOZ_C_SUPPORTS_WARNING(-W, no-error=maybe-uninitialized, ac_c_has_noerror_maybe_uninitialized)
@@ -6972,6 +6973,8 @@ elif test "$GNU_CC"; then
     if test -n "$MOZ_PGO"; then
         MOZ_C_SUPPORTS_WARNING(-W, no-error=coverage-mismatch, ac_c_has_noerror_coverage_mismatch)
         MOZ_CXX_SUPPORTS_WARNING(-W, no-error=coverage-mismatch, ac_cxx_has_noerror_coverage_mismatch)
+        MOZ_C_SUPPORTS_WARNING(-W, no-error=free-nonheap-object, ac_c_has_noerror_free_nonheap_object)
+        MOZ_CXX_SUPPORTS_WARNING(-W, no-error=free-nonheap-object, ac_cxx_has_noerror_free_nonheap_object)
     fi
 fi
 
@@ -7668,19 +7671,6 @@ if test "$MOZ_CHROME_FILE_FORMAT" != "jar" &&
     test "$MOZ_CHROME_FILE_FORMAT" != "omni"; then
     AC_MSG_ERROR([--enable-chrome-format must be set to either jar, flat, or omni])
 fi
-
-dnl =========================================================
-dnl Enable support for revamped devtools Performance Tools
-dnl =========================================================
-
-MOZ_ARG_ENABLE_BOOL(devtools-perf,
-[  --enable-devtools-perf Set compile flags necessary for compiling devtools perftools],
-MOZ_DEVTOOLS_PERFTOOLS=1,
-MOZ_DEVTOOLS_PERFTOOLS= )
-if test -n "$MOZ_DEVTOOLS_PERFTOOLS"; then
-  AC_DEFINE(MOZ_DEVTOOLS_PERFTOOLS)
-fi
-AC_SUBST(MOZ_DEVTOOLS_PERFTOOLS)
 
 dnl =========================================================
 dnl Omnijar packaging (bug 552121)
@@ -9012,10 +9002,6 @@ fi
 
 if test "$MOZ_WIDGET_TOOLKIT" = "cocoa"; then
     USE_ICU=1
-fi
-
-if test "$OS_TARGET" = WINNT; then
-    MOZ_SHARED_ICU=1
 fi
 
 MOZ_CONFIG_ICU()

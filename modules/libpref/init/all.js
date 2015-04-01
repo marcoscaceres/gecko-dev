@@ -271,6 +271,8 @@ pref("media.wakelock_timeout", 2000);
 // opened as top-level documents, as opposed to inside a media element.
 pref("media.play-stand-alone", true);
 
+pref("media.hardware-video-decoding.enabled", true);
+
 #if defined(XP_WIN)
 pref("media.decoder.heuristic.dormant.enabled", true);
 pref("media.decoder.heuristic.dormant.timeout", 60000);
@@ -278,7 +280,6 @@ pref("media.decoder.heuristic.dormant.timeout", 60000);
 
 #ifdef MOZ_WMF
 pref("media.windows-media-foundation.enabled", true);
-pref("media.windows-media-foundation.use-dxva", true);
 #endif
 #ifdef MOZ_DIRECTSHOW
 pref("media.directshow.enabled", true);
@@ -2256,10 +2257,11 @@ pref("layout.css.scroll-behavior.damping-ratio", "1.0");
 pref("layout.css.scroll-snap.enabled", true);
 
 // Is support for document.fonts enabled?
-//
-// Don't enable the pref for the CSS Font Loading API until bug 1072101 is
-// fixed, as we don't want to expose more indexed properties on the Web.
+#ifdef RELEASE_BUILD
 pref("layout.css.font-loading-api.enabled", false);
+#else
+pref("layout.css.font-loading-api.enabled", true);
+#endif
 
 // pref for which side vertical scrollbars should be on
 // 0 = end-side in UI direction

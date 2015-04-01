@@ -70,17 +70,6 @@ const ITEM_RECORD_PROPERTIES = `
   syncStatus
 `.trim().split(/\s+/);
 
-// Article objects that are passed to ReadingList.addItem may contain
-// some properties that are known but are not currently stored in the
-// ReadingList records. This is the list of properties that are knowingly
-// disregarded before the item is normalized.
-const ITEM_DISREGARDED_PROPERTIES = `
-  byline
-  dir
-  content
-  length
-`.trim().split(/\s+/);
-
 // Each local item has a syncStatus indicating the state of the item in relation
 // to the sync server.  See also Sync.jsm.
 const SYNC_STATUS_SYNCED = 0;
@@ -432,7 +421,7 @@ ReadingListImpl.prototype = {
    * @return {Promise} Promise that is fullfilled with the added item.
    */
   addItemFromBrowser: Task.async(function* (browser, url) {
-    let metadata = yield getMetadataFromBrowser(browser);
+    let metadata = yield this.getMetadataFromBrowser(browser);
     let record = {
       url: url,
       title: metadata.title,
@@ -446,6 +435,25 @@ ReadingListImpl.prototype = {
 
     return (yield this.addItem(record));
   }),
+
+  /**
+   * Get page metadata from the content document in a given <xul:browser>.
+   * @see PageMetadata.jsm
+   *
+   * @param {<xul:browser>} browser - Browser element for the document.
+   * @returns {Promise} Promise that is fulfilled with an object describing the metadata.
+   */
+  getMetadataFromBrowser(browser) {
+    let mm = browser.messageManager;
+    return new Promise(resolve => {
+      function handleResult(msg) {
+        mm.removeMessageListener("PageMetadata:PageDataResult", handleResult);
+        resolve(msg.json);
+      }
+      mm.addMessageListener("PageMetadata:PageDataResult", handleResult);
+      mm.sendAsyncMessage("PageMetadata:GetPageData");
+    });
+  },
 
   /**
    * Adds a listener that will be notified when the list changes.  Listeners
@@ -991,9 +999,6 @@ ReadingListItemIterator.prototype = {
 function normalizeRecord(nonNormalizedRecord) {
   let record = {};
   for (let prop in nonNormalizedRecord) {
-    if (ITEM_DISREGARDED_PROPERTIES.indexOf(prop) >= 0) {
-      continue;
-    }
     if (ITEM_RECORD_PROPERTIES.indexOf(prop) < 0) {
       throw new Error("Unrecognized item property: " + prop);
     }
@@ -1055,25 +1060,6 @@ function hash(str) {
 
 function clone(obj) {
   return Cu.cloneInto(obj, {}, { cloneFunctions: false });
-}
-
-/**
- * Get page metadata from the content document in a given <xul:browser>.
- * @see PageMetadata.jsm
- *
- * @param {<xul:browser>} browser - Browser element for the document.
- * @returns {Promise} Promise that is fulfilled with an object describing the metadata.
- */
-function getMetadataFromBrowser(browser) {
-  let mm = browser.messageManager;
-  return new Promise(resolve => {
-    function handleResult(msg) {
-      mm.removeMessageListener("PageMetadata:PageDataResult", handleResult);
-      resolve(msg.json);
-    }
-    mm.addMessageListener("PageMetadata:PageDataResult", handleResult);
-    mm.sendAsyncMessage("PageMetadata:GetPageData");
-  });
 }
 
 Object.defineProperty(this, "ReadingList", {

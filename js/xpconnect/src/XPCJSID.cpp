@@ -11,6 +11,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/jsipc/CrossProcessObjectWrappers.h"
 #include "mozilla/StaticPtr.h"
+#include "nsIProgrammingLanguage.h"
 
 using namespace mozilla::dom;
 using namespace JS;
@@ -598,7 +599,7 @@ nsJSCID::NewID(const char* str)
         if (NS_FAILED(registrar->ContractIDToCID(str, &cid)))
             return nullptr;
         bool success = idObj->mDetails->InitWithName(*cid, str);
-        nsMemory::Free(cid);
+        free(cid);
         if (!success)
             return nullptr;
     }

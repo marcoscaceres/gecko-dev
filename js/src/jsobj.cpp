@@ -2497,7 +2497,6 @@ js::InitClass(JSContext* cx, HandleObject obj, HandleObject protoProto_,
     RootedObject protoProto(cx, protoProto_);
 
     /* Check function pointer members. */
-    MOZ_ASSERT(clasp->addProperty != JS_PropertyStub);
     MOZ_ASSERT(clasp->getProperty != JS_PropertyStub);
     MOZ_ASSERT(clasp->setProperty != JS_StrictPropertyStub);
 
@@ -4094,10 +4093,10 @@ JSObject::markChildren(JSTracer* trc)
                 }
             }
 
-            gc::MarkArraySlots(trc,
-                               nobj->getDenseInitializedLength(),
-                               nobj->getDenseElementsAllowCopyOnWrite(),
-                               "objectElements");
+            TraceRange(trc,
+                       nobj->getDenseInitializedLength(),
+                       static_cast<HeapSlot*>(nobj->getDenseElementsAllowCopyOnWrite()),
+                       "objectElements");
         } while (false);
     }
 }

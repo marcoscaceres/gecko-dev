@@ -6425,11 +6425,7 @@ MOZ_ARG_ENABLE_BOOL(verify-mar,
     MOZ_VERIFY_MAR_SIGNATURE= )
 
 if test -n "$MOZ_VERIFY_MAR_SIGNATURE"; then
-  if test "$OS_ARCH" = "WINNT"; then
-    AC_DEFINE(MOZ_VERIFY_MAR_SIGNATURE)
-  else
-    AC_MSG_ERROR([Can only build with --enable-verify-mar with a Windows target])
-  fi
+  AC_DEFINE(MOZ_VERIFY_MAR_SIGNATURE)
 fi
 
 dnl ========================================================
@@ -8619,7 +8615,11 @@ fi
 IS_ALPHA=`echo $MOZ_APP_VERSION | grep a`
 if test -z "$IS_ALPHA"; then
   changequote(,)
-  MOZ_APP_MAXVERSION=`echo $MOZ_APP_VERSION | sed "s|\(^[0-9]*\).*|\1|"`.*
+  if test "$(basename $MOZ_BUILD_APP)" = "suite"; then
+    MOZ_APP_MAXVERSION=`echo $MOZ_APP_VERSION | sed "s|\(^[0-9]*\.[0-9]*\).*|\1|"`.*
+  else
+    MOZ_APP_MAXVERSION=`echo $MOZ_APP_VERSION | sed "s|\(^[0-9]*\).*|\1|"`.*
+  fi
   changequote([,])
 else
   MOZ_APP_MAXVERSION=$MOZ_APP_VERSION

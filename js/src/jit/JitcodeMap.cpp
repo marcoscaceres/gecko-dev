@@ -172,7 +172,6 @@ JitcodeGlobalEntry::BaselineEntry::callStackAtAddr(JSRuntime* rt, void* ptr,
                                                    uint32_t maxResults) const
 {
     MOZ_ASSERT(containsPointer(ptr));
-    MOZ_ASSERT(script_->hasBaselineScript());
     MOZ_ASSERT(maxResults >= 1);
 
     results[0] = str();
@@ -802,8 +801,8 @@ JitcodeGlobalTable::sweep(JSRuntime* rt)
 bool
 JitcodeGlobalEntry::BaseEntry::markJitcodeIfUnmarked(JSTracer* trc)
 {
-    if (!IsJitCodeMarked(&jitcode_)) {
-        MarkJitCodeUnbarriered(trc, &jitcode_, "jitcodglobaltable-baseentry-jitcode");
+    if (!IsMarkedUnbarriered(&jitcode_)) {
+        TraceManuallyBarrieredEdge(trc, &jitcode_, "jitcodglobaltable-baseentry-jitcode");
         return true;
     }
     return false;
@@ -812,21 +811,21 @@ JitcodeGlobalEntry::BaseEntry::markJitcodeIfUnmarked(JSTracer* trc)
 bool
 JitcodeGlobalEntry::BaseEntry::isJitcodeMarkedFromAnyThread()
 {
-    return IsJitCodeMarked(&jitcode_) ||
+    return IsMarkedUnbarriered(&jitcode_) ||
            jitcode_->arenaHeader()->allocatedDuringIncremental;
 }
 
 bool
 JitcodeGlobalEntry::BaseEntry::isJitcodeAboutToBeFinalized()
 {
-    return IsJitCodeAboutToBeFinalized(&jitcode_);
+    return IsAboutToBeFinalizedUnbarriered(&jitcode_);
 }
 
 bool
 JitcodeGlobalEntry::BaselineEntry::markIfUnmarked(JSTracer* trc)
 {
-    if (!IsScriptMarked(&script_)) {
-        MarkScriptUnbarriered(trc, &script_, "jitcodeglobaltable-baselineentry-script");
+    if (!IsMarkedUnbarriered(&script_)) {
+        TraceManuallyBarrieredEdge(trc, &script_, "jitcodeglobaltable-baselineentry-script");
         return true;
     }
     return false;
@@ -835,13 +834,13 @@ JitcodeGlobalEntry::BaselineEntry::markIfUnmarked(JSTracer* trc)
 void
 JitcodeGlobalEntry::BaselineEntry::sweep()
 {
-    MOZ_ALWAYS_FALSE(IsScriptAboutToBeFinalized(&script_));
+    MOZ_ALWAYS_FALSE(IsAboutToBeFinalizedUnbarriered(&script_));
 }
 
 bool
 JitcodeGlobalEntry::BaselineEntry::isMarkedFromAnyThread()
 {
-    return IsScriptMarked(&script_) ||
+    return IsMarkedUnbarriered(&script_) ||
            script_->arenaHeader()->allocatedDuringIncremental;
 }
 
@@ -851,9 +850,9 @@ JitcodeGlobalEntry::IonEntry::markIfUnmarked(JSTracer* trc)
     bool markedAny = false;
 
     for (unsigned i = 0; i < numScripts(); i++) {
-        if (!IsScriptMarked(&sizedScriptList()->pairs[i].script)) {
-            MarkScriptUnbarriered(trc, &sizedScriptList()->pairs[i].script,
-                                  "jitcodeglobaltable-ionentry-script");
+        if (!IsMarkedUnbarriered(&sizedScriptList()->pairs[i].script)) {
+            TraceManuallyBarrieredEdge(trc, &sizedScriptList()->pairs[i].script,
+                                       "jitcodeglobaltable-ionentry-script");
             markedAny = true;
         }
     }
@@ -868,13 +867,13 @@ JitcodeGlobalEntry::IonEntry::markIfUnmarked(JSTracer* trc)
             TypeSet::MarkTypeUnbarriered(trc, &iter->type, "jitcodeglobaltable-ionentry-type");
             markedAny = true;
         }
-        if (iter->hasAllocationSite() && !IsScriptMarked(&iter->script)) {
-            MarkScriptUnbarriered(trc, &iter->script,
-                                  "jitcodeglobaltable-ionentry-type-addendum-script");
+        if (iter->hasAllocationSite() && !IsMarkedUnbarriered(&iter->script)) {
+            TraceManuallyBarrieredEdge(trc, &iter->script,
+                                       "jitcodeglobaltable-ionentry-type-addendum-script");
             markedAny = true;
-        } else if (iter->hasConstructor() && !IsObjectMarked(&iter->constructor)) {
-            MarkObjectUnbarriered(trc, &iter->constructor,
-                                  "jitcodeglobaltable-ionentry-type-addendum-constructor");
+        } else if (iter->hasConstructor() && !IsMarkedUnbarriered(&iter->constructor)) {
+            TraceManuallyBarrieredEdge(trc, &iter->constructor,
+                                       "jitcodeglobaltable-ionentry-type-addendum-constructor");
             markedAny = true;
         }
     }
@@ -886,7 +885,7 @@ void
 JitcodeGlobalEntry::IonEntry::sweep()
 {
     for (unsigned i = 0; i < numScripts(); i++)
-        MOZ_ALWAYS_FALSE(IsScriptAboutToBeFinalized(&sizedScriptList()->pairs[i].script));
+        MOZ_ALWAYS_FALSE(IsAboutToBeFinalizedUnbarriered(&sizedScriptList()->pairs[i].script));
 
     if (!optsAllTypes_)
         return;
@@ -898,9 +897,9 @@ JitcodeGlobalEntry::IonEntry::sweep()
         // entries that are sampled, and thus are not about to be finalized.
         MOZ_ALWAYS_FALSE(TypeSet::IsTypeAboutToBeFinalized(&iter->type));
         if (iter->hasAllocationSite())
-            MOZ_ALWAYS_FALSE(IsScriptAboutToBeFinalized(&iter->script));
+            MOZ_ALWAYS_FALSE(IsAboutToBeFinalizedUnbarriered(&iter->script));
         else if (iter->hasConstructor())
-            MOZ_ALWAYS_FALSE(IsObjectAboutToBeFinalized(&iter->constructor));
+            MOZ_ALWAYS_FALSE(IsAboutToBeFinalizedUnbarriered(&iter->constructor));
     }
 }
 
@@ -908,7 +907,7 @@ bool
 JitcodeGlobalEntry::IonEntry::isMarkedFromAnyThread()
 {
     for (unsigned i = 0; i < numScripts(); i++) {
-        if (!IsScriptMarked(&sizedScriptList()->pairs[i].script) &&
+        if (!IsMarkedUnbarriered(&sizedScriptList()->pairs[i].script) &&
             !sizedScriptList()->pairs[i].script->arenaHeader()->allocatedDuringIncremental)
         {
             return false;

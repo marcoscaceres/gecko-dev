@@ -178,6 +178,7 @@
 #include "mozilla/dom/voicemail/VoicemailIPCService.h"
 #include "mozilla/net/NeckoMessageUtils.h"
 #include "mozilla/RemoteSpellCheckEngineChild.h"
+#include "GMPServiceChild.h"
 
 using namespace mozilla;
 using namespace mozilla::docshell;
@@ -191,6 +192,7 @@ using namespace mozilla::dom::mobilemessage;
 using namespace mozilla::dom::telephony;
 using namespace mozilla::dom::voicemail;
 using namespace mozilla::embedding;
+using namespace mozilla::gmp;
 using namespace mozilla::hal_sandbox;
 using namespace mozilla::ipc;
 using namespace mozilla::layers;
@@ -1036,6 +1038,13 @@ ContentChild::AllocPContentBridgeParent(mozilla::ipc::Transport* aTransport,
     return mLastBridge;
 }
 
+PGMPServiceChild*
+ContentChild::AllocPGMPServiceChild(mozilla::ipc::Transport* aTransport,
+                                    base::ProcessId aOtherProcess)
+{
+    return GMPServiceChild::Create(aTransport, aOtherProcess);
+}
+
 PCompositorChild*
 ContentChild::AllocPCompositorChild(mozilla::ipc::Transport* aTransport,
                                     base::ProcessId aOtherProcess)
@@ -1226,13 +1235,14 @@ StartMacOSContentSandbox()
 
   MacSandboxInfo info;
   info.type = MacSandboxType_Content;
-  info.appPath.Assign(appPath);
-  info.appBinaryPath.Assign(appBinaryPath);
-  info.appDir.Assign(appDir);
+  info.level = Preferences::GetInt("security.sandbox.content.level");
+  info.appPath.assign(appPath.get());
+  info.appBinaryPath.assign(appBinaryPath.get());
+  info.appDir.assign(appDir.get());
 
-  nsAutoCString err;
+  std::string err;
   if (!mozilla::StartMacSandbox(info, err)) {
-    NS_WARNING(err.get());
+    NS_WARNING(err.c_str());
     MOZ_CRASH("sandbox_init() failed");
   }
 }

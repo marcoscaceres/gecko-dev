@@ -1211,11 +1211,23 @@ Parser<ParseHandler>::newFunction(HandleAtom atom, FunctionSyntaxKind kind, Hand
     MOZ_ASSERT_IF(kind == Statement, atom != nullptr);
 
     RootedFunction fun(context);
-    JSFunction::Flags flags = (kind == Expression)
-                              ? JSFunction::INTERPRETED_LAMBDA
-                              : (kind == Arrow)
-                                ? JSFunction::INTERPRETED_LAMBDA_ARROW
-                                : JSFunction::INTERPRETED;
+    
+    JSFunction::Flags flags;
+    switch(kind) {
+      case Expression:
+        flags = JSFunction::INTERPRETED_LAMBDA;
+        break;
+      case Arrow:
+        flags = JSFunction::INTERPRETED_LAMBDA_ARROW;
+        break;
+      case Method:
+        flags = JSFunction::INTERPRETED_METHOD;
+        break;
+      default:
+        flags = JSFunction::INTERPRETED;
+        break;
+    }
+    
     gc::AllocKind allocKind = JSFunction::FinalizeKind;
     if (kind == Arrow)
         allocKind = JSFunction::ExtendedFinalizeKind;
@@ -2453,7 +2465,8 @@ Parser<FullParseHandler>::standaloneLazyFunction(HandleFunction fun, unsigned st
     if (!funpc.init(tokenStream))
         return null();
 
-    if (!functionArgsAndBodyGeneric(pn, fun, Normal, Lazy)) {
+    FunctionSyntaxKind syntaxKind = fun->isMethod() ? Method : Statement;
+    if (!functionArgsAndBodyGeneric(pn, fun, Normal, syntaxKind)) {
         MOZ_ASSERT(directives == newDirectives);
         return null();
     }
@@ -2538,11 +2551,8 @@ Parser<ParseHandler>::functionArgsAndBodyGeneric(Node pn, HandleFunction fun, Fu
     if (!body)
         return false;
 
-    if (kind != Method && kind != Lazy &&
-        fun->name() && !checkStrictBinding(fun->name(), pn))
-    {
+    if (kind != Method && fun->name() && !checkStrictBinding(fun->name(), pn))
         return false;
-    }
 
     if (bodyType == StatementListBody) {
         bool matched;
@@ -2560,7 +2570,7 @@ Parser<ParseHandler>::functionArgsAndBodyGeneric(Node pn, HandleFunction fun, Fu
         if (tokenStream.hadError())
             return false;
         funbox->bufEnd = pos().end;
-        if ((kind == Statement || kind == Lazy) && !MatchOrInsertSemicolon(tokenStream))
+        if (kind == Statement && !MatchOrInsertSemicolon(tokenStream))
             return false;
     }
 
@@ -4745,7 +4755,8 @@ Parser<FullParseHandler>::forStatement()
      * pc->parsingForInit.
      */
     StmtInfoPC letStmt(context); /* used if blockObj != nullptr. */
-    ParseNode* pn2, *pn3;      /* forHead->pn_kid2 and pn_kid3. */
+    ParseNode* pn2;      /* forHead->pn_kid2 */
+    ParseNode* pn3;      /* forHead->pn_kid3 */
     ParseNodeKind headKind = PNK_FORHEAD;
     if (pn1) {
         bool isForIn, isForOf;
@@ -6903,7 +6914,9 @@ Parser<FullParseHandler>::legacyComprehensionTail(ParseNode* bodyExpr, unsigned 
     }
 
     unsigned adjust;
-    ParseNode* pn, *pn3, **pnp;
+    ParseNode* pn;
+    ParseNode* pn3;
+    ParseNode** pnp;
     StmtInfoPC stmtInfo(context);
     BindData<FullParseHandler> data(context);
     TokenKind tt;
@@ -8291,7 +8304,7 @@ Parser<ParseHandler>::propertyList(PropListType type)
                     return null();
             } else if (tt == TOK_LP) {
                 tokenStream.ungetToken();
-                if (!methodDefinition(type, propList, propname, Normal, Method,
+                if (!methodDefinition(type, propList, propname, Normal,
                                       isGenerator ? StarGenerator : NotGenerator, isStatic, op)) {
                     return null();
                 }
@@ -8300,9 +8313,8 @@ Parser<ParseHandler>::propertyList(PropListType type)
                 return null();
             }
         } else {
-            /* NB: Getter function in { get x(){} } is unnamed. */
             if (!methodDefinition(type, propList, propname, op == JSOP_INITPROP_GETTER ? Getter : Setter,
-                                  Expression, NotGenerator, isStatic, op)) {
+                                  NotGenerator, isStatic, op)) {
                 return null();
             }
         }
@@ -8333,17 +8345,17 @@ Parser<ParseHandler>::propertyList(PropListType type)
 template <typename ParseHandler>
 bool
 Parser<ParseHandler>::methodDefinition(PropListType listType, Node propList, Node propname,
-                                       FunctionType type, FunctionSyntaxKind kind,
-                                       GeneratorKind generatorKind,
+                                       FunctionType type, GeneratorKind generatorKind,
                                        bool isStatic, JSOp op)
 {
+    /* NB: Getter function in { get x(){} } is unnamed. */
     RootedPropertyName funName(context);
-    if (kind == Method && tokenStream.isCurrentTokenType(TOK_NAME))
+    if (type == Normal && tokenStream.isCurrentTokenType(TOK_NAME))
         funName = tokenStream.currentName();
     else
         funName = nullptr;
 
-    Node fn = functionDef(funName, type, kind, generatorKind);
+    Node fn = functionDef(funName, type, Method, generatorKind);
     if (!fn)
         return false;
 

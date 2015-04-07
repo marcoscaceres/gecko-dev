@@ -152,11 +152,15 @@ protected:
   friend struct mozilla::AnimationPlayerCollection;
 
   void AddElementCollection(AnimationPlayerCollection* aCollection);
-  void ElementCollectionRemoved() { CheckNeedsRefresh(); }
+  void ElementCollectionRemoved() { MaybeStartOrStopObservingRefreshDriver(); }
   void RemoveAllElementCollections();
 
-  // Check to see if we should stop or start observing the refresh driver
-  void CheckNeedsRefresh();
+  // We should normally only call MaybeStartOrStopObservingRefreshDriver in
+  // situations where we will also queue events since otherwise we may stop
+  // getting refresh driver ticks before we queue the necessary events.
+  void MaybeStartObservingRefreshDriver();
+  void MaybeStartOrStopObservingRefreshDriver();
+  bool NeedsRefresh() const;
 
   virtual nsIAtom* GetAnimationsAtom() = 0;
   virtual nsIAtom* GetAnimationsBeforeAtom() = 0;
@@ -426,9 +430,10 @@ struct AnimationPlayerCollection : public PRCList
 
   // Returns true if there is an animation that has yet to finish.
   bool HasCurrentAnimations() const;
-  // Returns true if there is an animation of the specified property that
-  // has yet to finish.
-  bool HasCurrentAnimationsForProperty(nsCSSProperty aProperty) const;
+  // Returns true if there is an animation of any of the specified properties
+  // that has yet to finish.
+  bool HasCurrentAnimationsForProperties(const nsCSSProperty* aProperties,
+                                         size_t aPropertyCount) const;
 
   // The refresh time associated with mStyleRule.
   TimeStamp mStyleRuleRefreshTime;

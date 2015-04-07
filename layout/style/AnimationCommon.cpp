@@ -99,23 +99,39 @@ CommonAnimationManager::RemoveAllElementCollections()
 }
 
 void
-CommonAnimationManager::CheckNeedsRefresh()
+CommonAnimationManager::MaybeStartObservingRefreshDriver()
+{
+  if (mIsObservingRefreshDriver || !NeedsRefresh()) {
+    return;
+  }
+
+  mPresContext->RefreshDriver()->AddRefreshObserver(this, Flush_Style);
+  mIsObservingRefreshDriver = true;
+}
+
+void
+CommonAnimationManager::MaybeStartOrStopObservingRefreshDriver()
+{
+  bool needsRefresh = NeedsRefresh();
+  if (needsRefresh && !mIsObservingRefreshDriver) {
+    mPresContext->RefreshDriver()->AddRefreshObserver(this, Flush_Style);
+  } else if (!needsRefresh && mIsObservingRefreshDriver) {
+    mPresContext->RefreshDriver()->RemoveRefreshObserver(this, Flush_Style);
+  }
+  mIsObservingRefreshDriver = needsRefresh;
+}
+
+bool
+CommonAnimationManager::NeedsRefresh() const
 {
   for (PRCList *l = PR_LIST_HEAD(&mElementCollections);
        l != &mElementCollections;
        l = PR_NEXT_LINK(l)) {
     if (static_cast<AnimationPlayerCollection*>(l)->mNeedsRefreshes) {
-      if (!mIsObservingRefreshDriver) {
-        mPresContext->RefreshDriver()->AddRefreshObserver(this, Flush_Style);
-        mIsObservingRefreshDriver = true;
-      }
-      return;
+      return true;
     }
   }
-  if (mIsObservingRefreshDriver) {
-    mIsObservingRefreshDriver = false;
-    mPresContext->RefreshDriver()->RemoveRefreshObserver(this, Flush_Style);
-  }
+  return false;
 }
 
 AnimationPlayerCollection*
@@ -282,7 +298,7 @@ void
 CommonAnimationManager::NotifyCollectionUpdated(AnimationPlayerCollection&
                                                   aCollection)
 {
-  CheckNeedsRefresh();
+  MaybeStartObservingRefreshDriver();
   mPresContext->ClearLastStyleUpdateForAllAnimations();
   mPresContext->RestyleManager()->IncrementAnimationGeneration();
   aCollection.UpdateAnimationGeneration(mPresContext);
@@ -382,21 +398,9 @@ CommonAnimationManager::GetAnimationRule(mozilla::dom::Element* aElement,
     return nullptr;
   }
 
-  // Animations should already be refreshed, but transitions may not be.
-  // Note that this is temporary, we would like both animations and transitions
-  // to both be refreshed by this point.
-  if (IsAnimationManager()) {
-    NS_WARN_IF_FALSE(!collection->mNeedsRefreshes ||
-                     collection->mStyleRuleRefreshTime ==
-                       mPresContext->RefreshDriver()->MostRecentRefresh(),
-                     "should already have refreshed style rule");
-  } else {
-    // FIXME: Remove this assignment.  See bug 1061364.
-    collection->mNeedsRefreshes = true;
-    collection->EnsureStyleRuleFor(
-      mPresContext->RefreshDriver()->MostRecentRefresh(),
-      EnsureStyleRule_IsNotThrottled);
-  }
+  collection->EnsureStyleRuleFor(
+    mPresContext->RefreshDriver()->MostRecentRefresh(),
+    EnsureStyleRule_IsNotThrottled);
 
   return collection->mStyleRule;
 }
@@ -833,7 +837,7 @@ AnimationPlayerCollection::EnsureStyleRuleFor(TimeStamp aRefreshTime,
     mPlayers[playerIdx]->ComposeStyle(mStyleRule, properties, mNeedsRefreshes);
   }
 
-  mManager->CheckNeedsRefresh();
+  mManager->MaybeStartObservingRefreshDriver();
 }
 
 bool
@@ -935,15 +939,16 @@ AnimationPlayerCollection::HasCurrentAnimations() const
 }
 
 bool
-AnimationPlayerCollection::HasCurrentAnimationsForProperty(nsCSSProperty
-                                                             aProperty) const
+AnimationPlayerCollection::HasCurrentAnimationsForProperties(
+                              const nsCSSProperty* aProperties,
+                              size_t aPropertyCount) const
 {
   for (size_t playerIdx = mPlayers.Length(); playerIdx-- != 0; ) {
     const AnimationPlayer& player = *mPlayers[playerIdx];
     const Animation* anim = player.GetSource();
     if (anim &&
         anim->IsCurrent(player) &&
-        anim->HasAnimationOfProperty(aProperty)) {
+        anim->HasAnimationOfProperties(aProperties, aPropertyCount)) {
       return true;
     }
   }

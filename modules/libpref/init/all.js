@@ -1332,8 +1332,10 @@ pref("network.http.spdy.default-concurrent", 100);
 
 // alt-svc allows separation of transport routing from
 // the origin host without using a proxy.
-pref("network.http.altsvc.enabled", true);
-pref("network.http.altsvc.oe", true);
+pref("network.http.atsvc.enabled", false);
+pref("network.http.atsvc.oe", false);
+pref("network.http.altsvc.enabled", false);
+pref("network.http.altsvc.oe", false);
 
 pref("network.http.diagnostics", false);
 
@@ -1845,7 +1847,7 @@ pref("security.csp.debug", false);
 pref("security.csp.experimentalEnabled", false);
 
 // Default Content Security Policy to apply to privileged apps.
-pref("security.apps.privileged.CSP.default", "default-src *; script-src 'self'; object-src 'none'; style-src 'self' 'unsafe-inline'");
+pref("security.apps.privileged.CSP.default", "default-src * data: blob:; script-src 'self'; object-src 'none'; style-src 'self' 'unsafe-inline'");
 
 // Mixed content blocking
 pref("security.mixed_content.block_active_content", false);
@@ -4049,7 +4051,15 @@ pref("layers.offmainthreadcomposition.testing.enabled", false);
 pref("layers.offmainthreadcomposition.force-basic", false);
 
 // Whether to animate simple opacity and transforms on the compositor
+#ifdef RELEASE_BUILD
 pref("layers.offmainthreadcomposition.async-animations", false);
+#else
+#if defined(MOZ_X11)
+pref("layers.offmainthreadcomposition.async-animations", false);
+#else
+pref("layers.offmainthreadcomposition.async-animations", true);
+#endif
+#endif
 
 // Whether to log information about off main thread animations to stderr
 pref("layers.offmainthreadcomposition.log-animations", false);
@@ -4647,17 +4657,13 @@ pref("reader.toolbar.vertical", true);
 pref("media.gmp.insecure.allow", false);
 #endif
 
-// Use vsync aligned rendering. b2g prefs are in b2g.js
-// Only supported on windows, os x, and b2g
-#if defined(XP_MACOSX) || defined(XP_WIN)
+// Use vsync aligned rendering. b2g prefs are in b2g.js.
+// Hardware vsync supported on windows, os x, and b2g.
+// Linux and fennec will use software vsync.
+#if defined(XP_MACOSX) || defined(XP_WIN) || defined(XP_LINUX)
 pref("gfx.vsync.hw-vsync.enabled", true);
 pref("gfx.vsync.compositor", true);
 pref("gfx.vsync.refreshdriver", true);
-#endif
-
-#if defined(XP_LINUX)
-pref("gfx.vsync.hw-vsync.enabled", true);
-pref("gfx.vsync.compositor", true);
 #endif
 
 // Secure Element API

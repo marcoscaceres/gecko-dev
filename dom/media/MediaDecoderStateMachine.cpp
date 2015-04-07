@@ -2389,8 +2389,7 @@ MediaDecoderStateMachine::SeekCompleted()
     // seekTime is bounded in suitable duration. See Bug 1112438.
     int64_t videoStart = video ? video->mTime : seekTime;
     int64_t audioStart = audio ? audio->mTime : seekTime;
-    newCurrentTime = mAudioStartTime =
-        std::min(std::min(audioStart, videoStart), seekTime);
+    newCurrentTime = mAudioStartTime = std::min(audioStart, videoStart);
   } else {
     newCurrentTime = video ? video->mTime : seekTime;
   }
@@ -2510,10 +2509,9 @@ MediaDecoderStateMachine::FinishShutdown()
   // dispatch an event to the main thread to release the decoder and
   // state machine.
   DECODER_LOG("Shutting down state machine task queue");
-  nsCOMPtr<nsIThread> mainThread;
-  NS_GetMainThread(getter_AddRefs(mainThread));
   RefPtr<DecoderDisposer> disposer = new DecoderDisposer(mDecoder, this);
-  TaskQueue()->BeginShutdown()->Then(mainThread.get(), __func__, disposer.get(),
+  TaskQueue()->BeginShutdown()->Then(AbstractThread::MainThread(), __func__,
+                                     disposer.get(),
                                      &DecoderDisposer::OnTaskQueueShutdown,
                                      &DecoderDisposer::OnTaskQueueShutdown);
 }

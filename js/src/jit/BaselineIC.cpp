@@ -154,7 +154,7 @@ void
 ICStub::markCode(JSTracer* trc, const char* name)
 {
     JitCode* stubJitCode = jitCode();
-    MarkJitCodeUnbarriered(trc, &stubJitCode, name);
+    TraceManuallyBarrieredEdge(trc, &stubJitCode, name);
 }
 
 void
@@ -169,9 +169,9 @@ void
 ReceiverGuard::trace(JSTracer* trc)
 {
     if (shape_)
-        MarkShape(trc, &shape_, "receiver_guard_shape");
+        TraceEdge(trc, &shape_, "receiver_guard_shape");
     else
-        MarkObjectGroup(trc, &group_, "receiver_guard_group");
+        TraceEdge(trc, &group_, "receiver_guard_group");
 }
 
 /* static */ void
@@ -201,75 +201,75 @@ ICStub::trace(JSTracer* trc)
     switch (kind()) {
       case ICStub::Call_Scripted: {
         ICCall_Scripted* callStub = toCall_Scripted();
-        MarkObject(trc, &callStub->callee(), "baseline-callscripted-callee");
+        TraceEdge(trc, &callStub->callee(), "baseline-callscripted-callee");
         if (callStub->templateObject())
-            MarkObject(trc, &callStub->templateObject(), "baseline-callscripted-template");
+            TraceEdge(trc, &callStub->templateObject(), "baseline-callscripted-template");
         break;
       }
       case ICStub::Call_Native: {
         ICCall_Native* callStub = toCall_Native();
-        MarkObject(trc, &callStub->callee(), "baseline-callnative-callee");
+        TraceEdge(trc, &callStub->callee(), "baseline-callnative-callee");
         if (callStub->templateObject())
-            MarkObject(trc, &callStub->templateObject(), "baseline-callnative-template");
+            TraceEdge(trc, &callStub->templateObject(), "baseline-callnative-template");
         break;
       }
       case ICStub::Call_ClassHook: {
         ICCall_ClassHook* callStub = toCall_ClassHook();
         if (callStub->templateObject())
-            MarkObject(trc, &callStub->templateObject(), "baseline-callclasshook-template");
+            TraceEdge(trc, &callStub->templateObject(), "baseline-callclasshook-template");
         break;
       }
       case ICStub::Call_StringSplit: {
         ICCall_StringSplit* callStub = toCall_StringSplit();
-        MarkObject(trc, &callStub->templateObject(), "baseline-callstringsplit-template");
-        MarkString(trc, &callStub->expectedArg(), "baseline-callstringsplit-arg");
-        MarkString(trc, &callStub->expectedThis(), "baseline-callstringsplit-this");
+        TraceEdge(trc, &callStub->templateObject(), "baseline-callstringsplit-template");
+        TraceEdge(trc, &callStub->expectedArg(), "baseline-callstringsplit-arg");
+        TraceEdge(trc, &callStub->expectedThis(), "baseline-callstringsplit-this");
         break;
       }
       case ICStub::GetElem_NativeSlot: {
         ICGetElem_NativeSlot* getElemStub = toGetElem_NativeSlot();
-        MarkShape(trc, &getElemStub->shape(), "baseline-getelem-native-shape");
-        MarkString(trc, &getElemStub->name(), "baseline-getelem-native-name");
+        TraceEdge(trc, &getElemStub->shape(), "baseline-getelem-native-shape");
+        TraceEdge(trc, &getElemStub->name(), "baseline-getelem-native-name");
         break;
       }
       case ICStub::GetElem_NativePrototypeSlot: {
         ICGetElem_NativePrototypeSlot* getElemStub = toGetElem_NativePrototypeSlot();
-        MarkShape(trc, &getElemStub->shape(), "baseline-getelem-nativeproto-shape");
-        MarkString(trc, &getElemStub->name(), "baseline-getelem-nativeproto-name");
-        MarkObject(trc, &getElemStub->holder(), "baseline-getelem-nativeproto-holder");
-        MarkShape(trc, &getElemStub->holderShape(), "baseline-getelem-nativeproto-holdershape");
+        TraceEdge(trc, &getElemStub->shape(), "baseline-getelem-nativeproto-shape");
+        TraceEdge(trc, &getElemStub->name(), "baseline-getelem-nativeproto-name");
+        TraceEdge(trc, &getElemStub->holder(), "baseline-getelem-nativeproto-holder");
+        TraceEdge(trc, &getElemStub->holderShape(), "baseline-getelem-nativeproto-holdershape");
         break;
       }
       case ICStub::GetElem_NativePrototypeCallNative:
       case ICStub::GetElem_NativePrototypeCallScripted: {
         ICGetElemNativePrototypeCallStub* callStub =
             reinterpret_cast<ICGetElemNativePrototypeCallStub*>(this);
-        MarkShape(trc, &callStub->shape(), "baseline-getelem-nativeprotocall-shape");
-        MarkString(trc, &callStub->name(), "baseline-getelem-nativeprotocall-name");
-        MarkObject(trc, &callStub->getter(), "baseline-getelem-nativeprotocall-getter");
-        MarkObject(trc, &callStub->holder(), "baseline-getelem-nativeprotocall-holder");
-        MarkShape(trc, &callStub->holderShape(), "baseline-getelem-nativeprotocall-holdershape");
+        TraceEdge(trc, &callStub->shape(), "baseline-getelem-nativeprotocall-shape");
+        TraceEdge(trc, &callStub->name(), "baseline-getelem-nativeprotocall-name");
+        TraceEdge(trc, &callStub->getter(), "baseline-getelem-nativeprotocall-getter");
+        TraceEdge(trc, &callStub->holder(), "baseline-getelem-nativeprotocall-holder");
+        TraceEdge(trc, &callStub->holderShape(), "baseline-getelem-nativeprotocall-holdershape");
         break;
       }
       case ICStub::GetElem_Dense: {
         ICGetElem_Dense* getElemStub = toGetElem_Dense();
-        MarkShape(trc, &getElemStub->shape(), "baseline-getelem-dense-shape");
+        TraceEdge(trc, &getElemStub->shape(), "baseline-getelem-dense-shape");
         break;
       }
       case ICStub::GetElem_TypedArray: {
         ICGetElem_TypedArray* getElemStub = toGetElem_TypedArray();
-        MarkShape(trc, &getElemStub->shape(), "baseline-getelem-typedarray-shape");
+        TraceEdge(trc, &getElemStub->shape(), "baseline-getelem-typedarray-shape");
         break;
       }
       case ICStub::SetElem_Dense: {
         ICSetElem_Dense* setElemStub = toSetElem_Dense();
-        MarkShape(trc, &setElemStub->shape(), "baseline-getelem-dense-shape");
-        MarkObjectGroup(trc, &setElemStub->group(), "baseline-setelem-dense-group");
+        TraceEdge(trc, &setElemStub->shape(), "baseline-getelem-dense-shape");
+        TraceEdge(trc, &setElemStub->group(), "baseline-setelem-dense-group");
         break;
       }
       case ICStub::SetElem_DenseAdd: {
         ICSetElem_DenseAdd* setElemStub = toSetElem_DenseAdd();
-        MarkObjectGroup(trc, &setElemStub->group(), "baseline-setelem-denseadd-group");
+        TraceEdge(trc, &setElemStub->group(), "baseline-setelem-denseadd-group");
 
         JS_STATIC_ASSERT(ICSetElem_DenseAdd::MAX_PROTO_CHAIN_DEPTH == 4);
 
@@ -285,32 +285,32 @@ ICStub::trace(JSTracer* trc)
       }
       case ICStub::SetElem_TypedArray: {
         ICSetElem_TypedArray* setElemStub = toSetElem_TypedArray();
-        MarkShape(trc, &setElemStub->shape(), "baseline-setelem-typedarray-shape");
+        TraceEdge(trc, &setElemStub->shape(), "baseline-setelem-typedarray-shape");
         break;
       }
       case ICStub::TypeMonitor_SingleObject: {
         ICTypeMonitor_SingleObject* monitorStub = toTypeMonitor_SingleObject();
-        MarkObject(trc, &monitorStub->object(), "baseline-monitor-singleton");
+        TraceEdge(trc, &monitorStub->object(), "baseline-monitor-singleton");
         break;
       }
       case ICStub::TypeMonitor_ObjectGroup: {
         ICTypeMonitor_ObjectGroup* monitorStub = toTypeMonitor_ObjectGroup();
-        MarkObjectGroup(trc, &monitorStub->group(), "baseline-monitor-group");
+        TraceEdge(trc, &monitorStub->group(), "baseline-monitor-group");
         break;
       }
       case ICStub::TypeUpdate_SingleObject: {
         ICTypeUpdate_SingleObject* updateStub = toTypeUpdate_SingleObject();
-        MarkObject(trc, &updateStub->object(), "baseline-update-singleton");
+        TraceEdge(trc, &updateStub->object(), "baseline-update-singleton");
         break;
       }
       case ICStub::TypeUpdate_ObjectGroup: {
         ICTypeUpdate_ObjectGroup* updateStub = toTypeUpdate_ObjectGroup();
-        MarkObjectGroup(trc, &updateStub->group(), "baseline-update-group");
+        TraceEdge(trc, &updateStub->group(), "baseline-update-group");
         break;
       }
       case ICStub::GetName_Global: {
         ICGetName_Global* globalStub = toGetName_Global();
-        MarkShape(trc, &globalStub->shape(), "baseline-global-stub-shape");
+        TraceEdge(trc, &globalStub->shape(), "baseline-global-stub-shape");
         break;
       }
       case ICStub::GetName_Scope0:
@@ -341,7 +341,7 @@ ICStub::trace(JSTracer* trc)
       }
       case ICStub::GetProp_Primitive: {
         ICGetProp_Primitive* propStub = toGetProp_Primitive();
-        MarkShape(trc, &propStub->protoShape(), "baseline-getprop-primitive-stub-shape");
+        TraceEdge(trc, &propStub->protoShape(), "baseline-getprop-primitive-stub-shape");
         break;
       }
       case ICStub::GetProp_Native: {
@@ -352,8 +352,8 @@ ICStub::trace(JSTracer* trc)
       case ICStub::GetProp_NativePrototype: {
         ICGetProp_NativePrototype* propStub = toGetProp_NativePrototype();
         propStub->receiverGuard().trace(trc);
-        MarkObject(trc, &propStub->holder(), "baseline-getpropnativeproto-stub-holder");
-        MarkShape(trc, &propStub->holderShape(), "baseline-getpropnativeproto-stub-holdershape");
+        TraceEdge(trc, &propStub->holder(), "baseline-getpropnativeproto-stub-holder");
+        TraceEdge(trc, &propStub->holderShape(), "baseline-getpropnativeproto-stub-holdershape");
         break;
       }
       case ICStub::GetProp_NativeDoesNotExist: {
@@ -376,12 +376,12 @@ ICStub::trace(JSTracer* trc)
       }
       case ICStub::GetProp_Unboxed: {
         ICGetProp_Unboxed* propStub = toGetProp_Unboxed();
-        MarkObjectGroup(trc, &propStub->group(), "baseline-getprop-unboxed-stub-group");
+        TraceEdge(trc, &propStub->group(), "baseline-getprop-unboxed-stub-group");
         break;
       }
       case ICStub::GetProp_TypedObject: {
         ICGetProp_TypedObject* propStub = toGetProp_TypedObject();
-        MarkShape(trc, &propStub->shape(), "baseline-getprop-typedobject-stub-shape");
+        TraceEdge(trc, &propStub->shape(), "baseline-getprop-typedobject-stub-shape");
         break;
       }
       case ICStub::GetProp_CallDOMProxyNative:
@@ -393,48 +393,48 @@ ICStub::trace(JSTracer* trc)
             propStub = toGetProp_CallDOMProxyWithGenerationNative();
         propStub->receiverGuard().trace(trc);
         if (propStub->expandoShape()) {
-            MarkShape(trc, &propStub->expandoShape(),
+            TraceEdge(trc, &propStub->expandoShape(),
                       "baseline-getproplistbasenative-stub-expandoshape");
         }
-        MarkObject(trc, &propStub->holder(), "baseline-getproplistbasenative-stub-holder");
-        MarkShape(trc, &propStub->holderShape(), "baseline-getproplistbasenative-stub-holdershape");
-        MarkObject(trc, &propStub->getter(), "baseline-getproplistbasenative-stub-getter");
+        TraceEdge(trc, &propStub->holder(), "baseline-getproplistbasenative-stub-holder");
+        TraceEdge(trc, &propStub->holderShape(), "baseline-getproplistbasenative-stub-holdershape");
+        TraceEdge(trc, &propStub->getter(), "baseline-getproplistbasenative-stub-getter");
         break;
       }
       case ICStub::GetProp_DOMProxyShadowed: {
         ICGetProp_DOMProxyShadowed* propStub = toGetProp_DOMProxyShadowed();
-        MarkShape(trc, &propStub->shape(), "baseline-getproplistbaseshadowed-stub-shape");
-        MarkString(trc, &propStub->name(), "baseline-getproplistbaseshadowed-stub-name");
+        TraceEdge(trc, &propStub->shape(), "baseline-getproplistbaseshadowed-stub-shape");
+        TraceEdge(trc, &propStub->name(), "baseline-getproplistbaseshadowed-stub-name");
         break;
       }
       case ICStub::GetProp_CallScripted: {
         ICGetProp_CallScripted* callStub = toGetProp_CallScripted();
         callStub->receiverGuard().trace(trc);
-        MarkObject(trc, &callStub->holder(), "baseline-getpropcallscripted-stub-holder");
-        MarkShape(trc, &callStub->holderShape(), "baseline-getpropcallscripted-stub-holdershape");
-        MarkObject(trc, &callStub->getter(), "baseline-getpropcallscripted-stub-getter");
+        TraceEdge(trc, &callStub->holder(), "baseline-getpropcallscripted-stub-holder");
+        TraceEdge(trc, &callStub->holderShape(), "baseline-getpropcallscripted-stub-holdershape");
+        TraceEdge(trc, &callStub->getter(), "baseline-getpropcallscripted-stub-getter");
         break;
       }
       case ICStub::GetProp_CallNative: {
         ICGetProp_CallNative* callStub = toGetProp_CallNative();
         callStub->receiverGuard().trace(trc);
-        MarkObject(trc, &callStub->holder(), "baseline-getpropcallnative-stub-holder");
-        MarkShape(trc, &callStub->holderShape(), "baseline-getpropcallnative-stub-holdershape");
-        MarkObject(trc, &callStub->getter(), "baseline-getpropcallnative-stub-getter");
+        TraceEdge(trc, &callStub->holder(), "baseline-getpropcallnative-stub-holder");
+        TraceEdge(trc, &callStub->holderShape(), "baseline-getpropcallnative-stub-holdershape");
+        TraceEdge(trc, &callStub->getter(), "baseline-getpropcallnative-stub-getter");
         break;
       }
       case ICStub::SetProp_Native: {
         ICSetProp_Native* propStub = toSetProp_Native();
-        MarkShape(trc, &propStub->shape(), "baseline-setpropnative-stub-shape");
-        MarkObjectGroup(trc, &propStub->group(), "baseline-setpropnative-stub-group");
+        TraceEdge(trc, &propStub->shape(), "baseline-setpropnative-stub-shape");
+        TraceEdge(trc, &propStub->group(), "baseline-setpropnative-stub-group");
         break;
       }
       case ICStub::SetProp_NativeAdd: {
         ICSetProp_NativeAdd* propStub = toSetProp_NativeAdd();
-        MarkObjectGroup(trc, &propStub->group(), "baseline-setpropnativeadd-stub-group");
-        MarkShape(trc, &propStub->newShape(), "baseline-setpropnativeadd-stub-newshape");
+        TraceEdge(trc, &propStub->group(), "baseline-setpropnativeadd-stub-group");
+        TraceEdge(trc, &propStub->newShape(), "baseline-setpropnativeadd-stub-newshape");
         if (propStub->newGroup())
-            MarkObjectGroup(trc, &propStub->newGroup(), "baseline-setpropnativeadd-stub-new-group");
+            TraceEdge(trc, &propStub->newGroup(), "baseline-setpropnativeadd-stub-new-group");
         JS_STATIC_ASSERT(ICSetProp_NativeAdd::MAX_PROTO_CHAIN_DEPTH == 4);
         switch (propStub->protoChainDepth()) {
           case 0: propStub->toImpl<0>()->traceShapes(trc); break;
@@ -448,51 +448,51 @@ ICStub::trace(JSTracer* trc)
       }
       case ICStub::SetProp_Unboxed: {
         ICSetProp_Unboxed* propStub = toSetProp_Unboxed();
-        MarkObjectGroup(trc, &propStub->group(), "baseline-setprop-unboxed-stub-group");
+        TraceEdge(trc, &propStub->group(), "baseline-setprop-unboxed-stub-group");
         break;
       }
       case ICStub::SetProp_TypedObject: {
         ICSetProp_TypedObject* propStub = toSetProp_TypedObject();
-        MarkShape(trc, &propStub->shape(), "baseline-setprop-typedobject-stub-shape");
-        MarkObjectGroup(trc, &propStub->group(), "baseline-setprop-typedobject-stub-group");
+        TraceEdge(trc, &propStub->shape(), "baseline-setprop-typedobject-stub-shape");
+        TraceEdge(trc, &propStub->group(), "baseline-setprop-typedobject-stub-group");
         break;
       }
       case ICStub::SetProp_CallScripted: {
         ICSetProp_CallScripted* callStub = toSetProp_CallScripted();
         callStub->guard().trace(trc);
-        MarkObject(trc, &callStub->holder(), "baseline-setpropcallscripted-stub-holder");
-        MarkShape(trc, &callStub->holderShape(), "baseline-setpropcallscripted-stub-holdershape");
-        MarkObject(trc, &callStub->setter(), "baseline-setpropcallscripted-stub-setter");
+        TraceEdge(trc, &callStub->holder(), "baseline-setpropcallscripted-stub-holder");
+        TraceEdge(trc, &callStub->holderShape(), "baseline-setpropcallscripted-stub-holdershape");
+        TraceEdge(trc, &callStub->setter(), "baseline-setpropcallscripted-stub-setter");
         break;
       }
       case ICStub::SetProp_CallNative: {
         ICSetProp_CallNative* callStub = toSetProp_CallNative();
         callStub->guard().trace(trc);
-        MarkObject(trc, &callStub->holder(), "baseline-setpropcallnative-stub-holder");
-        MarkShape(trc, &callStub->holderShape(), "baseline-setpropcallnative-stub-holdershape");
-        MarkObject(trc, &callStub->setter(), "baseline-setpropcallnative-stub-setter");
+        TraceEdge(trc, &callStub->holder(), "baseline-setpropcallnative-stub-holder");
+        TraceEdge(trc, &callStub->holderShape(), "baseline-setpropcallnative-stub-holdershape");
+        TraceEdge(trc, &callStub->setter(), "baseline-setpropcallnative-stub-setter");
         break;
       }
       case ICStub::InstanceOf_Function: {
         ICInstanceOf_Function* instanceofStub = toInstanceOf_Function();
-        MarkShape(trc, &instanceofStub->shape(), "baseline-instanceof-fun-shape");
-        MarkObject(trc, &instanceofStub->prototypeObject(), "baseline-instanceof-fun-prototype");
+        TraceEdge(trc, &instanceofStub->shape(), "baseline-instanceof-fun-shape");
+        TraceEdge(trc, &instanceofStub->prototypeObject(), "baseline-instanceof-fun-prototype");
         break;
       }
       case ICStub::NewArray_Fallback: {
         ICNewArray_Fallback* stub = toNewArray_Fallback();
-        MarkObject(trc, &stub->templateObject(), "baseline-newarray-template");
+        TraceEdge(trc, &stub->templateObject(), "baseline-newarray-template");
         break;
       }
       case ICStub::NewObject_Fallback: {
         ICNewObject_Fallback* stub = toNewObject_Fallback();
         if (stub->templateObject())
-            MarkObject(trc, &stub->templateObject(), "baseline-newobject-template");
+            TraceEdge(trc, &stub->templateObject(), "baseline-newobject-template");
         break;
       }
       case ICStub::Rest_Fallback: {
         ICRest_Fallback* stub = toRest_Fallback();
-        MarkObject(trc, &stub->templateObject(), "baseline-rest-template");
+        TraceEdge(trc, &stub->templateObject(), "baseline-rest-template");
         break;
       }
       default:
@@ -3718,9 +3718,9 @@ ArgumentsGetElemStubExists(ICGetElem_Fallback* stub, ICGetElem_Arguments::Which 
 
 
 static bool
-TryAttachNativeGetElemStub(JSContext* cx, HandleScript script, jsbytecode* pc,
-                           ICGetElem_Fallback* stub, HandleNativeObject obj,
-                           HandleValue key)
+TryAttachNativeGetValueElemStub(JSContext* cx, HandleScript script, jsbytecode* pc,
+                                ICGetElem_Fallback* stub, HandleNativeObject obj,
+                                HandleValue key)
 {
     // Native-object GetElem stubs can't deal with non-string keys.
     if (!key.isString())
@@ -3780,8 +3780,41 @@ TryAttachNativeGetElemStub(JSContext* cx, HandleScript script, jsbytecode* pc,
             return false;
 
         stub->addNewStub(newStub);
-        return true;
     }
+    return true;
+}
+
+static bool
+TryAttachNativeGetAccessorElemStub(JSContext* cx, HandleScript script, jsbytecode* pc,
+                                   ICGetElem_Fallback* stub, HandleNativeObject obj,
+                                   HandleValue key, bool* attached)
+{
+    MOZ_ASSERT(!*attached);
+    // Native-object GetElem stubs can't deal with non-string keys.
+    if (!key.isString())
+        return true;
+
+    // Convert to interned property name.
+    RootedId id(cx);
+    if (!ValueToId<CanGC>(cx, key, &id))
+        return false;
+
+    uint32_t dummy;
+    if (!JSID_IS_ATOM(id) || JSID_TO_ATOM(id)->isIndex(&dummy))
+        return true;
+
+    RootedPropertyName propName(cx, JSID_TO_ATOM(id)->asPropertyName());
+    bool needsAtomize = !key.toString()->isAtom();
+    bool isCallElem = (JSOp(*pc) == JSOP_CALLELEM);
+
+    RootedShape shape(cx);
+    RootedObject baseHolder(cx);
+    if (!EffectlesslyLookupProperty(cx, obj, propName, &baseHolder, &shape))
+        return false;
+    if(!baseHolder || baseHolder->isNative())
+        return true;
+
+    HandleNativeObject holder = baseHolder.as<NativeObject>();
 
     bool getterIsScripted = false;
     bool isTemporarilyUnoptimizable = false;
@@ -3838,6 +3871,7 @@ TryAttachNativeGetElemStub(JSContext* cx, HandleScript script, jsbytecode* pc,
             return false;
 
         stub->addNewStub(newStub);
+        *attached = true;
         return true;
     }
 
@@ -3959,8 +3993,11 @@ TryAttachGetElemStub(JSContext* cx, JSScript* script, jsbytecode* pc, ICGetElem_
         // Check for NativeObject[id] shape-optimizable accesses.
         if (rhs.isString()) {
             RootedScript rootedScript(cx, script);
-            if (!TryAttachNativeGetElemStub(cx, rootedScript, pc, stub, obj.as<NativeObject>(), rhs))
+            if (!TryAttachNativeGetValueElemStub(cx, rootedScript, pc, stub,
+                obj.as<NativeObject>(), rhs))
+            {
                 return false;
+            }
             script = rootedScript;
         }
     }
@@ -4039,6 +4076,22 @@ DoGetElemFallback(JSContext* cx, BaselineFrame* frame, ICGetElem_Fallback* stub_
             TypeScript::Monitor(cx, frame->script(), pc, res);
     }
 
+    bool attached = false;
+    if (stub->numOptimizedStubs() >= ICGetElem_Fallback::MAX_OPTIMIZED_STUBS) {
+        // TODO: Discard all stubs in this IC and replace with inert megamorphic stub.
+        // But for now we just bail.
+        attached = true;
+    }
+
+    // Try to attach an optimized getter stub.
+    if (!attached && lhs.isObject() && lhs.toObject().isNative() && rhs.isString()){
+        RootedScript rootedScript(cx, frame->script());
+        RootedNativeObject obj(cx, &lhs.toObject().as<NativeObject>());
+        if (!TryAttachNativeGetAccessorElemStub(cx, rootedScript, pc, stub, obj, rhs, &attached))
+            return false;
+        script = rootedScript;
+    }
+
     if (!isOptimizedArgs) {
         if (!GetElementOperation(cx, op, &lhsCopy, rhs, res))
             return false;
@@ -4053,11 +4106,8 @@ DoGetElemFallback(JSContext* cx, BaselineFrame* frame, ICGetElem_Fallback* stub_
     if (!stub->addMonitorStubForValue(cx, frame->script(), res))
         return false;
 
-    if (stub->numOptimizedStubs() >= ICGetElem_Fallback::MAX_OPTIMIZED_STUBS) {
-        // TODO: Discard all stubs in this IC and replace with inert megamorphic stub.
-        // But for now we just bail.
+    if (attached)
         return true;
-    }
 
     // Try to attach an optimized stub.
     if (!TryAttachGetElemStub(cx, frame->script(), pc, stub, lhs, rhs, res))
@@ -5791,19 +5841,12 @@ UpdateExistingGetPropCallStubs(ICFallbackStub* fallbackStub,
                 if (isOwnGetter)
                     getPropStub->receiverGuard().update(receiverGuard);
 
+                MOZ_ASSERT(getPropStub->holderShape() != holder->lastProperty() ||
+                           !getPropStub->receiverGuard().matches(receiverGuard),
+                           "Why didn't we end up using this stub?");
+
                 // We want to update the holder shape to match the new one no
                 // matter what, even if the receiver shape is different.
-
-                // We would like to assert that either
-                // getPropStub->holderShape() != holder->lastProperty() or
-                // receiverShape != cachedReceiverShape, but that assertion can
-                // fail if there is something in a getter that changes something
-                // that we guard on in our stub but don't check for before/after
-                // differences across the set during stub generation.  For
-                // example, a getter mutating the shape of the proto the getter
-                // lives on would cause us to create an IC stub that never
-                // matches as protos with the old shape flow into it, but always
-                // matches post-get, which is where we are now.
                 getPropStub->holderShape() = holder->lastProperty();
 
                 // Make sure to update the getter, since a shape change might
@@ -5853,11 +5896,11 @@ UpdateExistingSetPropCallStubs(ICSetProp_Fallback* fallbackStub,
     return foundMatchingStub;
 }
 
-// Attach an optimized stub for a GETGNAME/CALLGNAME op.
+// Attach an optimized stub for a GETGNAME/CALLGNAME slot-read op.
 static bool
-TryAttachGlobalNameStub(JSContext* cx, HandleScript script, jsbytecode* pc,
-                        ICGetName_Fallback* stub, Handle<GlobalObject*> global,
-                        HandlePropertyName name, bool* attached, bool* isTemporarilyUnoptimizable)
+TryAttachGlobalNameValueStub(JSContext* cx, HandleScript script, jsbytecode* pc,
+                             ICGetName_Fallback* stub, Handle<GlobalObject*> global,
+                             HandlePropertyName name, bool* attached)
 {
     MOZ_ASSERT(global->is<GlobalObject>());
     MOZ_ASSERT(!*attached);
@@ -5912,8 +5955,37 @@ TryAttachGlobalNameStub(JSContext* cx, HandleScript script, jsbytecode* pc,
 
         stub->addNewStub(newStub);
         *attached = true;
-        return true;
     }
+    return true;
+}
+
+// Attach an optimized stub for a GETGNAME/CALLGNAME getter op.
+static bool
+TryAttachGlobalNameAccessorStub(JSContext* cx, HandleScript script, jsbytecode* pc,
+                                ICGetName_Fallback* stub, Handle<GlobalObject*> global,
+                                HandlePropertyName name, bool* attached,
+                                bool* isTemporarilyUnoptimizable)
+{
+    MOZ_ASSERT(global->is<GlobalObject>());
+
+    RootedId id(cx, NameToId(name));
+
+    // The property must be found, and it must be found as a normal data property.
+    RootedShape shape(cx);
+    RootedNativeObject current(cx, global);
+    while (true) {
+        shape = current->lookup(cx, id);
+        if (shape)
+            break;
+        JSObject* proto = current->getProto();
+        if (!proto || !proto->is<NativeObject>())
+            return true;
+        current = &proto->as<NativeObject>();
+    }
+
+    // Instantiate this global property, for use during Ion compilation.
+    if (IsIonEnabled(cx))
+        EnsureTrackPropertyTypes(cx, current, id);
 
     // Try to add a getter stub. We don't handle scripted getters yet; if this
     // changes we need to make sure IonBuilder::getPropTryCommonGetter (which
@@ -5943,9 +6015,7 @@ TryAttachGlobalNameStub(JSContext* cx, HandleScript script, jsbytecode* pc,
 
         stub->addNewStub(newStub);
         *attached = true;
-        return true;
     }
-
     return true;
 }
 
@@ -6062,6 +6132,22 @@ DoGetNameFallback(JSContext* cx, BaselineFrame* frame, ICGetName_Fallback* stub_
     MOZ_ASSERT(op == JSOP_GETNAME || op == JSOP_GETGNAME);
 
     RootedPropertyName name(cx, script->getName(pc));
+    bool attached = false;
+    bool isTemporarilyUnoptimizable = false;
+
+    // Attach new stub.
+    if (stub->numOptimizedStubs() >= ICGetName_Fallback::MAX_OPTIMIZED_STUBS) {
+        // TODO: Discard all stubs in this IC and replace with generic stub.
+        attached = true;
+    }
+
+    if (!attached && IsGlobalOp(JSOp(*pc)) && !script->hasPollutedGlobalScope()) {
+        if (!TryAttachGlobalNameAccessorStub(cx, script, pc, stub, scopeChain.as<GlobalObject>(),
+            name, &attached, &isTemporarilyUnoptimizable))
+        {
+            return false;
+        }
+    }
 
     static_assert(JSOP_GETGNAME_LENGTH == JSOP_GETNAME_LENGTH,
                   "Otherwise our check for JSOP_TYPEOF isn't ok");
@@ -6082,22 +6168,13 @@ DoGetNameFallback(JSContext* cx, BaselineFrame* frame, ICGetName_Fallback* stub_
     // Add a type monitor stub for the resulting value.
     if (!stub->addMonitorStubForValue(cx, script, res))
         return false;
-
-    // Attach new stub.
-    if (stub->numOptimizedStubs() >= ICGetName_Fallback::MAX_OPTIMIZED_STUBS) {
-        // TODO: Discard all stubs in this IC and replace with generic stub.
+    if (attached)
         return true;
-    }
 
-    bool attached = false;
-    bool isTemporarilyUnoptimizable = false;
     if (IsGlobalOp(JSOp(*pc)) && !script->hasPollutedGlobalScope()) {
         Handle<GlobalObject*> global = scopeChain.as<GlobalObject>();
-        if (!TryAttachGlobalNameStub(cx, script, pc, stub, global, name, &attached,
-                                     &isTemporarilyUnoptimizable))
-        {
+        if (!TryAttachGlobalNameValueStub(cx, script, pc, stub, global, name, &attached))
             return false;
-        }
     } else {
         if (!TryAttachScopeNameStub(cx, script, stub, scopeChain, name, &attached))
             return false;
@@ -6478,14 +6555,12 @@ StripPreliminaryObjectStubs(JSContext* cx, ICFallbackStub* stub)
 }
 
 static bool
-TryAttachNativeGetPropStub(JSContext* cx, HandleScript script, jsbytecode* pc,
-                           ICGetProp_Fallback* stub, HandlePropertyName name,
-                           HandleValue val, HandleShape oldShape,
-                           HandleValue res, bool* attached,
-                           bool* isTemporarilyUnoptimizable)
+TryAttachNativeGetValuePropStub(JSContext* cx, HandleScript script, jsbytecode* pc,
+                                ICGetProp_Fallback* stub, HandlePropertyName name,
+                                HandleValue val, HandleShape oldShape,
+                                HandleValue res, bool* attached)
 {
     MOZ_ASSERT(!*attached);
-    MOZ_ASSERT(!*isTemporarilyUnoptimizable);
 
     if (!val.isObject())
         return true;
@@ -6497,21 +6572,15 @@ TryAttachNativeGetPropStub(JSContext* cx, HandleScript script, jsbytecode* pc,
         return true;
     }
 
-    bool isDOMProxy;
-    bool domProxyHasGeneration;
-    DOMProxyShadowsResult domProxyShadowsResult;
     RootedShape shape(cx);
     RootedObject holder(cx);
-    if (!EffectlesslyLookupProperty(cx, obj, name, &holder, &shape, &isDOMProxy,
-                                    &domProxyShadowsResult, &domProxyHasGeneration))
-    {
+    if (!EffectlesslyLookupProperty(cx, obj, name, &holder, &shape))
         return false;
-    }
 
     bool isCallProp = (JSOp(*pc) == JSOP_CALLPROP);
 
     ICStub* monitorStub = stub->fallbackMonitorStub()->firstMonitorStub();
-    if (!isDOMProxy && IsCacheableGetPropReadSlot(obj, holder, shape)) {
+    if (IsCacheableGetPropReadSlot(obj, holder, shape)) {
         bool isFixedSlot;
         uint32_t offset;
         GetFixedOrDynamicSlotOffset(&holder->as<NativeObject>(), shape->slot(), &isFixedSlot, &offset);
@@ -6523,8 +6592,7 @@ TryAttachNativeGetPropStub(JSContext* cx, HandleScript script, jsbytecode* pc,
         ICStub::Kind kind =
             (obj == holder) ? ICStub::GetProp_Native : ICStub::GetProp_NativePrototype;
 
-        JitSpew(JitSpew_BaselineIC, "  Generating GetProp(%s %s) stub",
-                    isDOMProxy ? "DOMProxy" : "Native",
+        JitSpew(JitSpew_BaselineIC, "  Generating GetProp(Native %s) stub",
                     (obj == holder) ? "direct" : "prototype");
         ICGetPropNativeCompiler compiler(cx, kind, isCallProp, monitorStub, obj, holder,
                                          name, isFixedSlot, offset);
@@ -6541,6 +6609,38 @@ TryAttachNativeGetPropStub(JSContext* cx, HandleScript script, jsbytecode* pc,
         *attached = true;
         return true;
     }
+    return true;
+}
+
+
+static bool
+TryAttachNativeGetAccessorPropStub(JSContext* cx, HandleScript script, jsbytecode* pc,
+                                   ICGetProp_Fallback* stub, HandlePropertyName name,
+                                   HandleValue val, HandleValue res, bool* attached,
+                                   bool* isTemporarilyUnoptimizable)
+{
+    MOZ_ASSERT(!*attached);
+    MOZ_ASSERT(!*isTemporarilyUnoptimizable);
+
+    if (!val.isObject())
+        return true;
+
+    RootedObject obj(cx, &val.toObject());
+
+    bool isDOMProxy;
+    bool domProxyHasGeneration;
+    DOMProxyShadowsResult domProxyShadowsResult;
+    RootedShape shape(cx);
+    RootedObject holder(cx);
+    if (!EffectlesslyLookupProperty(cx, obj, name, &holder, &shape, &isDOMProxy,
+                                    &domProxyShadowsResult, &domProxyHasGeneration))
+    {
+        return false;
+    }
+
+    bool isCallProp = (JSOp(*pc) == JSOP_CALLPROP);
+
+    ICStub* monitorStub = stub->fallbackMonitorStub()->firstMonitorStub();
 
     bool isScripted = false;
     bool cacheableCall = IsCacheableGetPropCall(cx, obj, holder, shape, &isScripted,
@@ -6950,35 +7050,6 @@ DoGetPropFallback(JSContext* cx, BaselineFrame* frame, ICGetProp_Fallback* stub_
     if (val.isObject())
         oldShape = val.toObject().maybeShape();
 
-    // After the  Genericstub was added, we should never reach the Fallbackstub again.
-    MOZ_ASSERT(!stub->hasStub(ICStub::GetProp_Generic));
-
-    RootedPropertyName name(cx, frame->script()->getName(pc));
-    if (!ComputeGetPropResult(cx, frame, op, name, val, res))
-        return false;
-
-    TypeScript::Monitor(cx, frame->script(), pc, res);
-
-    // Check if debug mode toggling made the stub invalid.
-    if (stub.invalid())
-        return true;
-
-    // Add a type monitor stub for the resulting value.
-    if (!stub->addMonitorStubForValue(cx, frame->script(), res))
-        return false;
-
-    if (stub->numOptimizedStubs() >= ICGetProp_Fallback::MAX_OPTIMIZED_STUBS) {
-        // Discard all stubs in this IC and replace with generic getprop stub.
-        for(ICStubIterator iter = stub->beginChain(); !iter.atEnd(); iter++)
-            iter.unlink(cx);
-        ICGetProp_Generic::Compiler compiler(cx, stub->fallbackMonitorStub()->firstMonitorStub());
-        ICStub* newStub = compiler.getStub(compiler.getStubSpace(frame->script()));
-        if (!newStub)
-            return false;
-        stub->addNewStub(newStub);
-        return true;
-    }
-
     bool attached = false;
     // There are some reasons we can fail to attach a stub that are temporary.
     // We want to avoid calling noteUnoptimizableAccess() if the reason we
@@ -6986,22 +7057,60 @@ DoGetPropFallback(JSContext* cx, BaselineFrame* frame, ICGetProp_Fallback* stub_
     // end up attaching a stub for the exact same access later.
     bool isTemporarilyUnoptimizable = false;
 
+    RootedScript script(cx, frame->script());
+    RootedPropertyName name(cx, frame->script()->getName(pc));
+
+    // After the  Genericstub was added, we should never reach the Fallbackstub again.
+    MOZ_ASSERT(!stub->hasStub(ICStub::GetProp_Generic));
+
+    if (stub->numOptimizedStubs() >= ICGetProp_Fallback::MAX_OPTIMIZED_STUBS) {
+        // Discard all stubs in this IC and replace with generic getprop stub.
+        for(ICStubIterator iter = stub->beginChain(); !iter.atEnd(); iter++)
+            iter.unlink(cx);
+        ICGetProp_Generic::Compiler compiler(cx, stub->fallbackMonitorStub()->firstMonitorStub());
+        ICStub* newStub = compiler.getStub(compiler.getStubSpace(script));
+        if (!newStub)
+            return false;
+        stub->addNewStub(newStub);
+        attached = true;
+    }
+
+    if (!attached && !TryAttachNativeGetAccessorPropStub(cx, script, pc, stub, name, val, res,
+                                                         &attached, &isTemporarilyUnoptimizable))
+    {
+        return false;
+    }
+
+    if (!ComputeGetPropResult(cx, frame, op, name, val, res))
+        return false;
+
+    TypeScript::Monitor(cx, script, pc, res);
+
+    // Check if debug mode toggling made the stub invalid.
+    if (stub.invalid())
+        return true;
+
+    // Add a type monitor stub for the resulting value.
+    if (!stub->addMonitorStubForValue(cx, script, res))
+        return false;
+
+    if (attached)
+        return true;
+
     if (op == JSOP_LENGTH) {
-        if (!TryAttachLengthStub(cx, frame->script(), stub, val, res, &attached))
+        if (!TryAttachLengthStub(cx, script, stub, val, res, &attached))
             return false;
         if (attached)
             return true;
     }
 
-    if (!TryAttachMagicArgumentsGetPropStub(cx, frame->script(), stub, name, val, res, &attached))
+    if (!TryAttachMagicArgumentsGetPropStub(cx, script, stub, name, val, res, &attached))
         return false;
     if (attached)
         return true;
 
-    RootedScript script(cx, frame->script());
-
-    if (!TryAttachNativeGetPropStub(cx, script, pc, stub, name, val, oldShape,
-                                    res, &attached, &isTemporarilyUnoptimizable))
+    if (!TryAttachNativeGetValuePropStub(cx, script, pc, stub, name, val, oldShape,
+                                         res, &attached))
         return false;
     if (attached)
         return true;

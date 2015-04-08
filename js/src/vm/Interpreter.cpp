@@ -56,8 +56,8 @@
 #if defined(XP_UNIX)
 #include <sys/resource.h>
 #elif defined(XP_WIN)
-#include <Processthreadsapi.h>
-#include <Windows.h>
+#include <processthreadsapi.h>
+#include <windows.h>
 #endif // defined(XP_UNIX) || defined(XP_WIN)
 
 using namespace js;
@@ -3038,7 +3038,7 @@ CASE(JSOP_OBJECT)
     RootedObject& ref = rootObject0;
     ref = script->getObject(REGS.pc);
     if (JS::CompartmentOptionsRef(cx).cloneSingletons()) {
-        JSObject* obj = DeepCloneObjectLiteral(cx, ref, js::MaybeSingletonObject);
+        JSObject* obj = DeepCloneObjectLiteral(cx, ref, TenuredObject);
         if (!obj)
             goto error;
         PUSH_OBJECT(*obj);

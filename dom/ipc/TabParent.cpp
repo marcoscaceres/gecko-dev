@@ -266,7 +266,6 @@ TabParent::TabParent(nsIContentParent* aManager,
   , mOrientation(0)
   , mDPI(0)
   , mDefaultScale(0)
-  , mShown(false)
   , mUpdatedDimensions(false)
   , mChromeOffset(0, 0)
   , mManager(aManager)
@@ -754,13 +753,6 @@ TabParent::LoadURL(nsIURI* aURI)
         return;
     }
 
-    if (!mShown) {
-        NS_WARNING(nsPrintfCString("TabParent::LoadURL(%s) called before "
-                                   "Show(). Ignoring LoadURL.\n",
-                                   spec.get()).get());
-        return;
-    }
-
     uint32_t appId = OwnOrContainingAppId();
     if (mSendOfflineStatus && NS_IsAppOffline(appId)) {
       // If the app is offline in the parent process
@@ -824,8 +816,6 @@ TabParent::LoadURL(nsIURI* aURI)
 void
 TabParent::Show(const ScreenIntSize& size, bool aParentIsActive)
 {
-    // sigh
-    mShown = true;
     mDimensions = size;
     if (mIsDestroyed) {
         return;
@@ -2241,6 +2231,17 @@ TabParent::RecvIsParentWindowMainWidgetVisible(bool* aIsVisible)
     do_QueryInterface(frame->OwnerDoc()->GetWindow());
   nsresult rv = windowUtils->GetIsParentWindowMainWidgetVisible(aIsVisible);
   return NS_SUCCEEDED(rv);
+}
+
+bool
+TabParent::RecvSynthesizeNativeMouseMove(const mozilla::LayoutDeviceIntPoint& aPoint)
+{
+  // The widget associated with the browser window
+  nsCOMPtr<nsIWidget> widget = GetWidget();
+  if (widget) {
+    widget->SynthesizeNativeMouseMove(aPoint);
+  }
+  return true;
 }
 
 bool

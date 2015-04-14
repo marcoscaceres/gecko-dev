@@ -2826,14 +2826,6 @@ NS_METHOD nsWindow::Invalidate(const nsIntRect & aRect)
   return NS_OK;
 }
 
-void
-nsWindow::Update()
-{
-  if (!ShouldUseOffMainThreadCompositing() && mWnd) {
-    ::UpdateWindow(mWnd);
-  }
-}
-
 NS_IMETHODIMP
 nsWindow::MakeFullScreen(bool aFullScreen, nsIScreen* aTargetScreen)
 {
@@ -4694,7 +4686,9 @@ nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
         break;
 
       // let the dwm handle nc painting on glass
-      if(nsUXThemeData::CheckForCompositor())
+      // Never allow native painting if we are on fullscreen
+      if(mSizeMode != nsSizeMode_Fullscreen &&
+         nsUXThemeData::CheckForCompositor())
         break;
 
       if (wParam == TRUE) {

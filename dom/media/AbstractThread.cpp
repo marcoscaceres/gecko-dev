@@ -11,43 +11,49 @@
 
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/StaticPtr.h"
+#include "mozilla/unused.h"
 
 namespace mozilla {
 
 StaticRefPtr<AbstractThread> sMainThread;
+ThreadLocal<AbstractThread*> AbstractThread::sCurrentThreadTLS;
 
-template<>
-nsresult
-AbstractThreadImpl<nsIThread>::Dispatch(already_AddRefed<nsIRunnable> aRunnable)
+class XPCOMThreadWrapper : public AbstractThread
 {
-  MediaTaskQueue::AssertInTailDispatchIfNeeded();
-  nsCOMPtr<nsIRunnable> r = aRunnable;
-  return mTarget->Dispatch(r, NS_DISPATCH_NORMAL);
-}
+public:
+  explicit XPCOMThreadWrapper(nsIThread* aTarget)
+    : AbstractThread(/* aRequireTailDispatch = */ false)
+    , mTarget(aTarget)
+  {}
 
-template<>
-bool
-AbstractThreadImpl<nsIThread>::IsCurrentThreadIn()
-{
-  bool in = NS_GetCurrentThread() == mTarget;
-  MOZ_ASSERT_IF(in, MediaTaskQueue::GetCurrentQueue() == nullptr);
-  return in;
-}
+  virtual void Dispatch(already_AddRefed<nsIRunnable> aRunnable,
+                        DispatchFailureHandling aFailureHandling = AssertDispatchSuccess,
+                        DispatchReason aReason = NormalDispatch) override
+  {
+    nsCOMPtr<nsIRunnable> r = aRunnable;
+    AbstractThread* currentThread;
+    if (aReason != TailDispatch && (currentThread = GetCurrent()) && currentThread->RequiresTailDispatch()) {
+      currentThread->TailDispatcher().AddTask(this, r.forget(), aFailureHandling);
+      return;
+    }
 
-void
-AbstractThread::MaybeTailDispatch(already_AddRefed<nsIRunnable> aRunnable,
-                                  bool aAssertDispatchSuccess)
-{
-  MediaTaskQueue* currentQueue = MediaTaskQueue::GetCurrentQueue();
-  if (currentQueue && currentQueue->RequiresTailDispatch()) {
-    currentQueue->TailDispatcher().AddTask(this, Move(aRunnable), aAssertDispatchSuccess);
-  } else {
-    nsresult rv = Dispatch(Move(aRunnable));
-    MOZ_DIAGNOSTIC_ASSERT(!aAssertDispatchSuccess || NS_SUCCEEDED(rv));
+    nsresult rv = mTarget->Dispatch(r, NS_DISPATCH_NORMAL);
+    MOZ_DIAGNOSTIC_ASSERT(aFailureHandling == DontAssertDispatchSuccess || NS_SUCCEEDED(rv));
     unused << rv;
   }
-}
 
+  virtual bool IsCurrentThreadIn() override
+  {
+    bool in = NS_GetCurrentThread() == mTarget;
+    MOZ_ASSERT_IF(in, GetCurrent() == this);
+    return in;
+  }
+
+  virtual TaskDispatcher& TailDispatcher() override { MOZ_CRASH("Not implemented!"); }
+
+private:
+  nsRefPtr<nsIThread> mTarget;
+};
 
 AbstractThread*
 AbstractThread::MainThread()
@@ -64,8 +70,13 @@ AbstractThread::InitStatics()
   nsCOMPtr<nsIThread> mainThread;
   NS_GetMainThread(getter_AddRefs(mainThread));
   MOZ_DIAGNOSTIC_ASSERT(mainThread);
-  sMainThread = new AbstractThreadImpl<nsIThread>(mainThread.get());
+  sMainThread = new XPCOMThreadWrapper(mainThread.get());
   ClearOnShutdown(&sMainThread);
+
+  if (!sCurrentThreadTLS.init()) {
+    MOZ_CRASH();
+  }
+  sCurrentThreadTLS.set(sMainThread);
 }
 
 } // namespace mozilla

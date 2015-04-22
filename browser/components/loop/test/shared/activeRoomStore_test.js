@@ -298,6 +298,8 @@ describe("loop.store.ActiveRoomStore", function () {
         sinon.assert.calledTwice(dispatcher.dispatch);
         sinon.assert.calledWithExactly(dispatcher.dispatch,
           new sharedActions.SetupRoomInfo({
+            roomContextUrls: undefined,
+            roomDescription: undefined,
             roomToken: fakeToken,
             roomName: fakeRoomData.decryptedContext.roomName,
             roomOwner: fakeRoomData.roomOwner,
@@ -477,6 +479,7 @@ describe("loop.store.ActiveRoomStore", function () {
         fetchServerAction.cryptoKey = "fakeKey";
 
         var roomContext = {
+          description: "Never gonna let you down. Never gonna give you up...",
           roomName: "The wonderful Loopy room",
           urls: [{
             description: "An invalid page",

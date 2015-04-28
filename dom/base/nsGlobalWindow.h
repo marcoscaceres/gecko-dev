@@ -838,7 +838,7 @@ public:
     CreateNamedPropertiesObject(JSContext *aCx, JS::Handle<JSObject*> aProto);
 
   nsGlobalWindow* Window();
-  nsIDOMWindow* GetSelf(mozilla::ErrorResult& aError);
+  nsGlobalWindow* Self();
   nsIDocument* GetDocument()
   {
     return GetDoc();
@@ -1306,7 +1306,7 @@ public:
   {
     mozilla::ErrorResult rv;
     ClearTimeoutOrInterval(aTimerID, rv);
-    return rv.ErrorCode();
+    return rv.StealNSResult();
   }
 
   // JS specific timeout functions (JS args grabbed from context).

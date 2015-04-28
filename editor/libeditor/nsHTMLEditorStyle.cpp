@@ -339,13 +339,13 @@ nsHTMLEditor::SetInlinePropertyOnTextNode(Text& aText,
   if (uint32_t(aEndOffset) != aText.Length()) {
     // We need to split off back of text node
     text = SplitNode(aText, aEndOffset, rv)->GetAsText();
-    NS_ENSURE_SUCCESS(rv.ErrorCode(), rv.ErrorCode());
+    NS_ENSURE_TRUE(!rv.Failed(), rv.StealNSResult());
   }
 
   if (aStartOffset) {
     // We need to split off front of text node
     SplitNode(*text, aStartOffset, rv);
-    NS_ENSURE_SUCCESS(rv.ErrorCode(), rv.ErrorCode());
+    NS_ENSURE_TRUE(!rv.Failed(), rv.StealNSResult());
   }
 
   if (aAttribute) {
@@ -1502,11 +1502,8 @@ nsHTMLEditor::RelativeFontChange(FontSize aDir)
         NS_ENSURE_SUCCESS(res, res);
       }
       if (IsTextNode(endNode) && IsEditable(endNode)) {
-        nsCOMPtr<nsIDOMCharacterData> nodeAsText = do_QueryInterface(endNode);
-        int32_t endOffset;
-        range->GetEndOffset(&endOffset);
         res = RelativeFontChangeOnTextNode(aDir == FontSize::incr ? +1 : -1,
-            static_cast<nsIDOMCharacterData*>(startNode->AsDOMNode()),
+            static_cast<nsIDOMCharacterData*>(endNode->AsDOMNode()),
             0, range->EndOffset());
         NS_ENSURE_SUCCESS(res, res);
       }

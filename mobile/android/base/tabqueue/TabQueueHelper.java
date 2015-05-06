@@ -155,7 +155,7 @@ public class TabQueueHelper {
         ThreadUtils.assertNotOnUiThread();
 
         Intent resultIntent = new Intent();
-        resultIntent.setClassName(context, AppConstants.BROWSER_INTENT_CLASS_NAME);
+        resultIntent.setClassName(context, AppConstants.MOZ_ANDROID_BROWSER_INTENT_CLASS);
         resultIntent.setAction(TabQueueHelper.LOAD_URLS_ACTION);
 
         PendingIntent pendingIntent = PendingIntent.getActivity(context, 0, resultIntent, PendingIntent.FLAG_CANCEL_CURRENT);
@@ -201,9 +201,7 @@ public class TabQueueHelper {
     public static void openQueuedUrls(final Context context, final GeckoProfile profile, final String filename, boolean shouldPerformJavaScriptCallback) {
         ThreadUtils.assertNotOnUiThread();
 
-        // Remove the notification.
-        NotificationManager notificationManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
-        notificationManager.cancel(TAB_QUEUE_NOTIFICATION_ID);
+        removeNotification(context);
 
         // exit early if we don't have any tabs queued
         if (getTabQueueLength(context) < 1) {
@@ -233,6 +231,11 @@ public class TabQueueHelper {
         // TODO: Use profile shared prefs when bug 1147925 gets fixed.
         final SharedPreferences prefs = GeckoSharedPrefs.forApp(context);
         prefs.edit().remove(PREF_TAB_QUEUE_COUNT).apply();
+    }
+
+    protected static void removeNotification(Context context) {
+        NotificationManager notificationManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+        notificationManager.cancel(TAB_QUEUE_NOTIFICATION_ID);
     }
 
     public static void processTabQueuePromptResponse(int resultCode, Context context) {

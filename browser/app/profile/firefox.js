@@ -1443,15 +1443,14 @@ pref("devtools.performance.ui.show-idle-blocks", true);
 pref("devtools.performance.ui.enable-memory", false);
 pref("devtools.performance.ui.enable-framerate", true);
 pref("devtools.performance.ui.show-jit-optimizations", false);
-// If in aurora (40.0, will revert for 40.1), set default
+// If in aurora/dev edition (40.0, will revert for 40.1), set default
 // to retro mode.
 // TODO bug 1160313
-#if MOZ_UPDATE_CHANNEL == aurora
+#ifdef MOZ_DEV_EDITION
   pref("devtools.performance.ui.retro-mode", true);
 #else
   pref("devtools.performance.ui.retro-mode", false);
 #endif
-
 
 // The default cache UI setting
 pref("devtools.cache.disabled", false);
@@ -1919,7 +1918,8 @@ pref("dom.serviceWorkers.enabled", true);
 #endif
 
 pref("browser.pocket.enabled", false);
-pref("browser.pocket.hostname", "localhost");
+pref("browser.pocket.api", "api.getpocket.com");
+pref("browser.pocket.site", "getpocket.com");
 pref("browser.pocket.oAuthConsumerKey", "40249-e88c401e1b1f2242d9e441c4");
 pref("browser.pocket.useLocaleList", true);
 pref("browser.pocket.enabledLocales", "en-US");

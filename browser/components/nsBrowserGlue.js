@@ -632,7 +632,6 @@ BrowserGlue.prototype = {
         let buttons = [
           {
             label: win.gNavigatorBundle.getFormattedString("addonwatch.disable.label", [addon.name]),
-            accessKey: win.gNavigatorBundle.getString("addonwatch.disable.accesskey"),
             callback: function() {
               addon.userDisabled = true;
               if (addon.pendingOperations != addon.PENDING_NONE) {
@@ -734,6 +733,7 @@ BrowserGlue.prototype = {
     LightweightThemeManager.addBuiltInTheme({
       id: "firefox-devedition@mozilla.org",
       name: themeName,
+      accentcolor: "transparent",
       headerURL: "resource:///chrome/browser/content/browser/defaultthemes/devedition.header.png",
       iconURL: "resource:///chrome/browser/content/browser/defaultthemes/devedition.icon.png",
       author: vendorShortName,

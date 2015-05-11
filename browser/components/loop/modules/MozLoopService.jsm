@@ -12,7 +12,7 @@ const INVALID_AUTH_TOKEN = 110;
 
 const LOOP_SESSION_TYPE = {
   GUEST: 1,
-  FXA: 2,
+  FXA: 2
 };
 
 /***
@@ -26,7 +26,7 @@ const TWO_WAY_MEDIA_CONN_LENGTH = {
   SHORTER_THAN_10S: 0,
   BETWEEN_10S_AND_30S: 1,
   BETWEEN_30S_AND_5M: 2,
-  MORE_THAN_5M: 3,
+  MORE_THAN_5M: 3
 };
 
 /**
@@ -123,7 +123,7 @@ XPCOMUtils.defineLazyGetter(this, "log", () => {
   let ConsoleAPI = Cu.import("resource://gre/modules/devtools/Console.jsm", {}).ConsoleAPI;
   let consoleOptions = {
     maxLogLevel: Services.prefs.getCharPref(PREF_LOG_LEVEL).toLowerCase(),
-    prefix: "Loop",
+    prefix: "Loop"
   };
   return new ConsoleAPI(consoleOptions);
 });
@@ -159,7 +159,7 @@ let MozLoopServiceInternal = {
   pushURLs: new Map(),
 
   mocks: {
-    pushHandler: undefined,
+    pushHandler: undefined
   },
 
   /**
@@ -275,7 +275,7 @@ let MozLoopServiceInternal = {
       Cr.NS_ERROR_OFFLINE,
       Cr.NS_ERROR_PROXY_CONNECTION_REFUSED,
       Cr.NS_ERROR_UNKNOWN_HOST,
-      Cr.NS_ERROR_UNKNOWN_PROXY_HOST,
+      Cr.NS_ERROR_UNKNOWN_PROXY_HOST
     ];
 
     if (error.code === null && error.errno === null &&
@@ -765,7 +765,7 @@ let MozLoopServiceInternal = {
 
         let ai = Services.appinfo;
         let uuid = uuidgen.generateUUID().toString();
-        uuid = uuid.substr(1,uuid.length-2); // remove uuid curly braces
+        uuid = uuid.substr(1, uuid.length-2); // remove uuid curly braces
 
         let directory = OS.Path.join(OS.Constants.Path.profileDir,
                                      "saved-telemetry-pings");
@@ -948,9 +948,10 @@ let MozLoopServiceInternal = {
   /**
    * Get the OAuth client constructed with Loop OAauth parameters.
    *
+   * @param {Boolean} forceReAuth Set to true to force the user to reauthenticate.
    * @return {Promise}
    */
-  promiseFxAOAuthClient: Task.async(function* () {
+  promiseFxAOAuthClient: Task.async(function* (forceReAuth) {
     // We must make sure to have only a single client otherwise they will have different states and
     // multiple channels. This would happen if the user clicks the Login button more than once.
     if (gFxAOAuthClientPromise) {
@@ -961,10 +962,14 @@ let MozLoopServiceInternal = {
       parameters => {
         // Add the fact that we want keys to the parameters.
         parameters.keys = true;
+        if (forceReAuth) {
+          parameters.action = "force_auth";
+          parameters.email = MozLoopService.userProfile.email;
+        }
 
         try {
           gFxAOAuthClient = new FxAccountsOAuthClient({
-            parameters: parameters,
+            parameters: parameters
           });
         } catch (ex) {
           gFxAOAuthClientPromise = null;
@@ -984,11 +989,12 @@ let MozLoopServiceInternal = {
   /**
    * Get the OAuth client and do the authorization web flow to get an OAuth code.
    *
+   * @param {Boolean} forceReAuth Set to true to force the user to reauthenticate.
    * @return {Promise}
    */
-  promiseFxAOAuthAuthorization: function() {
+  promiseFxAOAuthAuthorization: function(forceReAuth) {
     let deferred = Promise.defer();
-    this.promiseFxAOAuthClient().then(
+    this.promiseFxAOAuthClient(forceReAuth).then(
       client => {
         client.onComplete = this._fxAOAuthComplete.bind(this, deferred);
         client.onError = this._fxAOAuthError.bind(this, deferred);
@@ -1020,7 +1026,7 @@ let MozLoopServiceInternal = {
 
     let payload = {
       code: code,
-      state: state,
+      state: state
     };
     return this.hawkRequestInternal(LOOP_SESSION_TYPE.FXA, "/fxa-oauth/token", "POST", payload).then(response => {
       return JSON.parse(response.body);
@@ -1052,7 +1058,7 @@ let MozLoopServiceInternal = {
   _fxAOAuthError: function(deferred, err) {
     gFxAOAuthClientPromise = null;
     deferred.reject(err);
-  },
+  }
 };
 Object.freeze(MozLoopServiceInternal);
 
@@ -1079,7 +1085,7 @@ this.MozLoopService = {
     return {
       callsFxA: "25389583-921f-4169-a426-a4673658944b",
       roomsFxA: "6add272a-d316-477c-8335-f00f73dfde71",
-      roomsGuest: "19d3f799-a8f3-4328-9822-b7cd02765832",
+      roomsGuest: "19d3f799-a8f3-4328-9822-b7cd02765832"
     };
   },
 
@@ -1366,6 +1372,18 @@ this.MozLoopService = {
     });
   },
 
+  /**
+   * Returns true if this profile has an encryption key. For guest profiles
+   * this is always true, since we can generate a new one if needed. For FxA
+   * profiles, we need to check the preference.
+   *
+   * @return {Boolean} True if the profile has an encryption key.
+   */
+  get hasEncryptionKey() {
+    return !this.userProfile ||
+      Services.prefs.prefHasUserValue("loop.key.fxa");
+  },
+
   get errors() {
     return MozLoopServiceInternal.errors;
   },
@@ -1468,14 +1486,15 @@ this.MozLoopService = {
    *
    * The caller should be prepared to handle rejections related to network, server or login errors.
    *
+   * @param {Boolean} forceReAuth Set to true to force the user to reauthenticate.
    * @return {Promise} that resolves when the FxA login flow is complete.
    */
-  logInToFxA: function() {
+  logInToFxA: function(forceReAuth) {
     log.debug("logInToFxA with fxAOAuthTokenData:", !!MozLoopServiceInternal.fxAOAuthTokenData);
-    if (MozLoopServiceInternal.fxAOAuthTokenData) {
+    if (!forceReAuth && MozLoopServiceInternal.fxAOAuthTokenData) {
       return Promise.resolve(MozLoopServiceInternal.fxAOAuthTokenData);
     }
-    return MozLoopServiceInternal.promiseFxAOAuthAuthorization().then(response => {
+    return MozLoopServiceInternal.promiseFxAOAuthAuthorization(forceReAuth).then(response => {
       return MozLoopServiceInternal.promiseFxAOAuthToken(response.code, response.state);
     }).then(tokenData => {
       MozLoopServiceInternal.fxAOAuthTokenData = tokenData;
@@ -1621,7 +1640,7 @@ this.MozLoopService = {
     }
 
     let url = this.getTourURL("resume-with-conversation", {
-      incomingConversation: aIncomingConversationState,
+      incomingConversation: aIncomingConversationState
     });
 
     let win = Services.wm.getMostRecentWindow("navigator:browser");
@@ -1632,14 +1651,14 @@ this.MozLoopService = {
     // already open so we ignore the fragment and query string.
     let hadExistingTab = win.switchToTabHavingURI(url, true, {
       ignoreFragment: true,
-      ignoreQueryString: true,
+      ignoreQueryString: true
     });
 
     // If the tab was already open, send an event instead of using the query
     // parameter above (that we don't replace on existing tabs to avoid a reload).
     if (hadExistingTab) {
       UITour.notify("Loop:IncomingConversation", {
-        conversationOpen: aIncomingConversationState === "open",
+        conversationOpen: aIncomingConversationState === "open"
       });
     }
   },
@@ -1655,7 +1674,7 @@ this.MozLoopService = {
       let win = Services.wm.getMostRecentWindow("navigator:browser");
       win.switchToTabHavingURI(url, true, {
         ignoreFragment: true,
-        replaceQueryString: true,
+        replaceQueryString: true
       });
     } catch (ex) {
       log.error("Error opening Getting Started tour", ex);

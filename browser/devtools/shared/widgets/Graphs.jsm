@@ -9,6 +9,7 @@ Cu.import("resource:///modules/devtools/ViewHelpers.jsm");
 const promise = Cu.import("resource://gre/modules/Promise.jsm", {}).Promise;
 const {Task} = Cu.import("resource://gre/modules/Task.jsm", {});
 const {EventEmitter} = Cu.import("resource://gre/modules/devtools/event-emitter.js", {});
+const {DevToolsWorker} = Cu.import("resource:///modules/devtools/shared/worker.js", {});
 
 this.EXPORTED_SYMBOLS = [
   "GraphCursor",
@@ -985,12 +986,12 @@ AbstractCanvasGraph.prototype = {
       e.stopPropagation();
     }
 
-    // If a mouseup happened outside the toolbox and the current operation
-    // is causing the selection changed, then end it.
+    // If a mouseup happened outside the window and the current operation
+    // is causing the selection to change, then end it.
     if (e.buttons == 0 && (this.hasSelectionInProgress() ||
                            resizer.margin != null ||
                            dragger.origin != null)) {
-      return this._onMouseUp(e);
+      return this._onMouseUp();
     }
 
     let {mouseX,mouseY} = this._getRelativeEventCoordinates(e);
@@ -1092,10 +1093,8 @@ AbstractCanvasGraph.prototype = {
   /**
    * Listener for the "mouseup" event on the graph's container.
    */
-  _onMouseUp: function(e) {
+  _onMouseUp: function() {
     this._isMouseActive = false;
-    let {mouseX} = this._getRelativeEventCoordinates(e);
-
     switch (this._canvas.getAttribute("input")) {
       case "hovering-background":
       case "hovering-region":
@@ -1114,7 +1113,7 @@ AbstractCanvasGraph.prototype = {
             this.emit("deselecting");
           }
         } else {
-          this._selection.end = mouseX;
+          this._selection.end = this._cursor.x;
           this.emit("selecting");
         }
         break;
@@ -2148,40 +2147,14 @@ this.CanvasGraphUtils = {
    *
    * @param string task
    *        The task name. Currently supported: "plotTimestampsGraph".
-   * @param any args
+   * @param any data
    *        Extra arguments to pass to the worker.
-   * @param array transferrable [optional]
-   *        A list of transferrable objects, if any.
    * @return object
    *         A promise that is resolved once the worker finishes the task.
    */
-  _performTaskInWorker: function(task, args, transferrable) {
-    let worker = this._graphUtilsWorker || new ChromeWorker(WORKER_URL);
-    let id = this._graphUtilsTaskId++;
-    worker.postMessage({ task, id, args }, transferrable);
-    return this._waitForWorkerResponse(worker, id);
-  },
-
-  /**
-   * Waits for the specified worker to finish a task.
-   *
-   * @param ChromeWorker worker
-   *        The worker for which to add a message listener.
-   * @param number id
-   *        The worker task id.
-   */
-  _waitForWorkerResponse: function(worker, id) {
-    let deferred = promise.defer();
-
-    worker.addEventListener("message", function listener({ data }) {
-      if (data.id != id) {
-        return;
-      }
-      worker.removeEventListener("message", listener);
-      deferred.resolve(data);
-    });
-
-    return deferred.promise;
+  _performTaskInWorker: function(task, data) {
+    let worker = this._graphUtilsWorker || new DevToolsWorker(WORKER_URL);
+    return worker.performTask(task, data);
   }
 };
 

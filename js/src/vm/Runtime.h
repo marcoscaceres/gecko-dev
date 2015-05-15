@@ -430,6 +430,7 @@ struct WellKnownSymbols
 {
     js::ImmutableSymbolPtr iterator;
     js::ImmutableSymbolPtr match;
+    js::ImmutableSymbolPtr species;
 
     const ImmutableSymbolPtr& get(size_t u) const {
         MOZ_ASSERT(u < JS::WellKnownSymbolLimit);
@@ -679,6 +680,9 @@ struct JSRuntime : public JS::shadow::Runtime,
      * Value of asyncCause to be attached to asyncStackForNewActivations.
      */
     JSString* asyncCauseForNewActivations;
+
+    /* If non-null, report JavaScript entry points to this monitor. */
+    JS::dbg::AutoEntryMonitor* entryMonitor;
 
     js::Activation* const* addressOfActivation() const {
         return &activation_;

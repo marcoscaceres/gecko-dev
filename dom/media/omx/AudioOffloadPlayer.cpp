@@ -42,13 +42,9 @@ using namespace android;
 
 namespace mozilla {
 
-#ifdef PR_LOGGING
 PRLogModuleInfo* gAudioOffloadPlayerLog;
 #define AUDIO_OFFLOAD_LOG(type, msg) \
   PR_LOG(gAudioOffloadPlayerLog, type, msg)
-#else
-#define AUDIO_OFFLOAD_LOG(type, msg)
-#endif
 
 // maximum time in paused state when offloading audio decompression.
 // When elapsed, the GonkAudioSink is destroyed to allow the audio DSP to power down.
@@ -67,11 +63,9 @@ AudioOffloadPlayer::AudioOffloadPlayer(MediaOmxCommonDecoder* aObserver) :
 {
   MOZ_ASSERT(NS_IsMainThread());
 
-#ifdef PR_LOGGING
   if (!gAudioOffloadPlayerLog) {
     gAudioOffloadPlayerLog = PR_NewLogModule("AudioOffloadPlayer");
   }
-#endif
 
   CHECK(aObserver);
 #if ANDROID_VERSION >= 21
@@ -389,13 +383,6 @@ status_t AudioOffloadPlayer::DoSeek()
   }
 
   return OK;
-}
-
-double AudioOffloadPlayer::GetMediaTimeSecs()
-{
-  MOZ_ASSERT(NS_IsMainThread());
-  return (static_cast<double>(GetMediaTimeUs()) /
-      static_cast<double>(USECS_PER_S));
 }
 
 int64_t AudioOffloadPlayer::GetMediaTimeUs()

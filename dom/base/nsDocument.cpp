@@ -241,10 +241,8 @@ using namespace mozilla::dom;
 
 typedef nsTArray<Link*> LinkArray;
 
-#ifdef PR_LOGGING
 static PRLogModuleInfo* gDocumentLeakPRLog;
 static PRLogModuleInfo* gCspPRLog;
-#endif
 
 #define NAME_NOT_VALID ((nsSimpleContentList*)1)
 
@@ -1591,7 +1589,6 @@ nsDocument::nsDocument(const char* aContentType)
 {
   SetContentTypeInternal(nsDependentCString(aContentType));
 
-#ifdef PR_LOGGING
   if (!gDocumentLeakPRLog)
     gDocumentLeakPRLog = PR_NewLogModule("DocumentLeak");
 
@@ -1601,7 +1598,6 @@ nsDocument::nsDocument(const char* aContentType)
 
   if (!gCspPRLog)
     gCspPRLog = PR_NewLogModule("CSP");
-#endif
 
   // Start out mLastStyleSheetSet as null, per spec
   SetDOMStringToNull(mLastStyleSheetSet);
@@ -1640,11 +1636,9 @@ nsIDocument::~nsIDocument()
 
 nsDocument::~nsDocument()
 {
-#ifdef PR_LOGGING
   if (gDocumentLeakPRLog)
     PR_LOG(gDocumentLeakPRLog, PR_LOG_DEBUG,
            ("DOCUMENT %p destroyed", this));
-#endif
 
   NS_ASSERTION(!mIsShowing, "Destroying a currently-showing document");
 
@@ -2309,13 +2303,11 @@ nsDocument::ResetToURI(nsIURI *aURI, nsILoadGroup *aLoadGroup,
 {
   NS_PRECONDITION(aURI, "Null URI passed to ResetToURI");
 
-#ifdef PR_LOGGING
   if (gDocumentLeakPRLog && PR_LOG_TEST(gDocumentLeakPRLog, PR_LOG_DEBUG)) {
     nsAutoCString spec;
     aURI->GetSpec(spec);
     PR_LogPrint("DOCUMENT %p ResetToURI %s", this, spec.get());
   }
-#endif
 
   mSecurityInfo = nullptr;
 
@@ -2644,7 +2636,6 @@ nsDocument::StartDocumentLoad(const char* aCommand, nsIChannel* aChannel,
                               nsIStreamListener **aDocListener,
                               bool aReset, nsIContentSink* aSink)
 {
-#ifdef PR_LOGGING
   if (gDocumentLeakPRLog && PR_LOG_TEST(gDocumentLeakPRLog, PR_LOG_DEBUG)) {
     nsCOMPtr<nsIURI> uri;
     aChannel->GetURI(getter_AddRefs(uri));
@@ -2653,17 +2644,9 @@ nsDocument::StartDocumentLoad(const char* aCommand, nsIChannel* aChannel,
       uri->GetSpec(spec);
     PR_LogPrint("DOCUMENT %p StartDocumentLoad %s", this, spec.get());
   }
-#endif
 
-#ifdef DEBUG
-  {
-    uint32_t appId;
-    nsresult rv = NodePrincipal()->GetAppId(&appId);
-    NS_ENSURE_SUCCESS(rv, rv);
-    MOZ_ASSERT(appId != nsIScriptSecurityManager::UNKNOWN_APP_ID,
-               "Document should never have UNKNOWN_APP_ID");
-  }
-#endif
+  MOZ_ASSERT(NodePrincipal()->GetAppId() != nsIScriptSecurityManager::UNKNOWN_APP_ID,
+             "Document should never have UNKNOWN_APP_ID");
 
   MOZ_ASSERT(GetReadyStateEnum() == nsIDocument::READYSTATE_UNINITIALIZED,
              "Bad readyState");
@@ -2787,13 +2770,11 @@ AppendCSPFromHeader(nsIContentSecurityPolicy* csp,
       const nsSubstring& policy = tokenizer.nextToken();
       rv = csp->AppendPolicy(policy, aReportOnly);
       NS_ENSURE_SUCCESS(rv, rv);
-#ifdef PR_LOGGING
       {
         PR_LOG(gCspPRLog, PR_LOG_DEBUG,
                 ("CSP refined with policy: \"%s\"",
                 NS_ConvertUTF16toUTF8(policy).get()));
       }
-#endif
   }
   return NS_OK;
 }
@@ -2830,10 +2811,8 @@ nsDocument::InitCSP(nsIChannel* aChannel)
 {
   nsCOMPtr<nsIContentSecurityPolicy> csp;
   if (!CSPService::sCSPEnabled) {
-#ifdef PR_LOGGING
     PR_LOG(gCspPRLog, PR_LOG_DEBUG,
            ("CSP is disabled, skipping CSP init for document %p", this));
-#endif
     return NS_OK;
   }
 
@@ -2864,16 +2843,14 @@ nsDocument::InitCSP(nsIChannel* aChannel)
   if (appStatus != nsIPrincipal::APP_STATUS_NOT_INSTALLED) {
     nsCOMPtr<nsIAppsService> appsService = do_GetService(APPS_SERVICE_CONTRACTID);
     if (appsService) {
-      uint32_t appId = 0;
-      if (NS_SUCCEEDED(principal->GetAppId(&appId))) {
-        appsService->GetManifestCSPByLocalId(appId, appManifestCSP);
-        if (!appManifestCSP.IsEmpty()) {
-          applyAppManifestCSP = true;
-        }
-        appsService->GetDefaultCSPByLocalId(appId, appDefaultCSP);
-        if (!appDefaultCSP.IsEmpty()) {
-          applyAppDefaultCSP = true;
-        }
+      uint32_t appId = principal->GetAppId();
+      appsService->GetManifestCSPByLocalId(appId, appManifestCSP);
+      if (!appManifestCSP.IsEmpty()) {
+        applyAppManifestCSP = true;
+      }
+      appsService->GetDefaultCSPByLocalId(appId, appDefaultCSP);
+      if (!appDefaultCSP.IsEmpty()) {
+        applyAppDefaultCSP = true;
       }
     }
   }
@@ -2887,22 +2864,21 @@ nsDocument::InitCSP(nsIChannel* aChannel)
       !applyLoopCSP &&
       cspHeaderValue.IsEmpty() &&
       cspROHeaderValue.IsEmpty()) {
-#ifdef PR_LOGGING
-    nsCOMPtr<nsIURI> chanURI;
-    aChannel->GetURI(getter_AddRefs(chanURI));
-    nsAutoCString aspec;
-    chanURI->GetAsciiSpec(aspec);
-    PR_LOG(gCspPRLog, PR_LOG_DEBUG,
-           ("no CSP for document, %s, %s",
-            aspec.get(),
-            applyAppDefaultCSP ? "is app" : "not an app"));
-#endif
+    if (PR_LOG_TEST(gCspPRLog, PR_LOG_DEBUG)) {
+      nsCOMPtr<nsIURI> chanURI;
+      aChannel->GetURI(getter_AddRefs(chanURI));
+      nsAutoCString aspec;
+      chanURI->GetAsciiSpec(aspec);
+      PR_LOG(gCspPRLog, PR_LOG_DEBUG,
+             ("no CSP for document, %s, %s",
+              aspec.get(),
+              applyAppDefaultCSP ? "is app" : "not an app"));
+    }
+
     return NS_OK;
   }
 
-#ifdef PR_LOGGING
   PR_LOG(gCspPRLog, PR_LOG_DEBUG, ("Document is an app or CSP header specified %p", this));
-#endif
 
   nsresult rv;
 
@@ -2921,12 +2897,10 @@ nsDocument::InitCSP(nsIChannel* aChannel)
     NS_ENSURE_SUCCESS(rv, rv);
 
     if (csp) {
-#ifdef PR_LOGGING
       PR_LOG(gCspPRLog, PR_LOG_DEBUG, ("%s %s %s",
            "This document is sharing principal with another document.",
            "Since the document is an app, CSP was already set.",
            "Skipping attempt to set CSP."));
-#endif
       return NS_OK;
     }
   }
@@ -2934,9 +2908,7 @@ nsDocument::InitCSP(nsIChannel* aChannel)
   csp = do_CreateInstance("@mozilla.org/cspcontext;1", &rv);
 
   if (NS_FAILED(rv)) {
-#ifdef PR_LOGGING
     PR_LOG(gCspPRLog, PR_LOG_DEBUG, ("Failed to create CSP object: %x", rv));
-#endif
     return rv;
   }
 
@@ -2989,10 +2961,8 @@ nsDocument::InitCSP(nsIChannel* aChannel)
     rv = csp->PermitsAncestry(docShell, &safeAncestry);
 
     if (NS_FAILED(rv) || !safeAncestry) {
-#ifdef PR_LOGGING
       PR_LOG(gCspPRLog, PR_LOG_DEBUG,
               ("CSP doesn't like frame's ancestry, not loading."));
-#endif
       // stop!  ERROR page!
       aChannel->Cancel(NS_ERROR_CSP_FRAME_ANCESTOR_VIOLATION);
     }
@@ -3011,13 +2981,11 @@ nsDocument::InitCSP(nsIChannel* aChannel)
       mReferrerPolicySet = true;
     } else if (mReferrerPolicy != referrerPolicy) {
       mReferrerPolicy = mozilla::net::RP_No_Referrer;
-#ifdef PR_LOGGING
       {
         PR_LOG(gCspPRLog, PR_LOG_DEBUG, ("%s %s",
                 "CSP wants to set referrer, but nsDocument"
                 "already has it set. No referrers will be sent"));
       }
-#endif
     }
 
     // Referrer Policy is set separately for the speculative parser in
@@ -3027,10 +2995,8 @@ nsDocument::InitCSP(nsIChannel* aChannel)
 
   rv = principal->SetCsp(csp);
   NS_ENSURE_SUCCESS(rv, rv);
-#ifdef PR_LOGGING
   PR_LOG(gCspPRLog, PR_LOG_DEBUG,
          ("Inserted CSP into principal %p", principal));
-#endif
 
   return NS_OK;
 }
@@ -11085,35 +11051,17 @@ private:
   nsRefPtr<gfx::VRHMDInfo> mHMD;
 };
 
-static nsIDocument*
-GetFullscreenRootDocument(nsIDocument* aDoc)
-{
-  if (!aDoc) {
-    return nullptr;
-  }
-  nsIDocument* doc = aDoc;
-  nsIDocument* parent;
-  while ((parent = doc->GetParentDocument()) &&
-         (!nsContentUtils::IsFullscreenApiContentOnly() ||
-          !nsContentUtils::IsChromeDoc(parent))) {
-    doc = parent;
-  }
-  return doc;
-}
-
 static void
 SetWindowFullScreen(nsIDocument* aDoc, bool aValue, gfx::VRHMDInfo *aVRHMD = nullptr)
 {
   // Maintain list of fullscreen root documents.
-  nsCOMPtr<nsIDocument> root = GetFullscreenRootDocument(aDoc);
+  nsCOMPtr<nsIDocument> root = nsContentUtils::GetRootDocument(aDoc);
   if (aValue) {
     FullscreenRoots::Add(root);
   } else {
     FullscreenRoots::Remove(root);
   }
-  if (!nsContentUtils::IsFullscreenApiContentOnly()) {
-    nsContentUtils::AddScriptRunner(new nsSetWindowFullScreen(aDoc, aValue, aVRHMD));
-  }
+  nsContentUtils::AddScriptRunner(new nsSetWindowFullScreen(aDoc, aValue, aVRHMD));
 }
 
 class nsCallExitFullscreen : public nsRunnable {
@@ -11318,7 +11266,7 @@ GetFullscreenLeaf(nsIDocument* aDoc)
   }
   // Otherwise we could be either in a non-fullscreen doc tree, or we're
   // below the fullscreen doc. Start the search from the root.
-  nsIDocument* root = GetFullscreenRootDocument(aDoc);
+  nsIDocument* root = nsContentUtils::GetRootDocument(aDoc);
   // Check that the root is actually fullscreen so we don't waste time walking
   // around its descendants.
   if (!root->IsFullScreenDoc()) {
@@ -11333,10 +11281,6 @@ nsDocument::RestorePreviousFullScreenState()
 {
   NS_ASSERTION(!IsFullScreenDoc() || !FullscreenRoots::IsEmpty(),
     "Should have at least 1 fullscreen root when fullscreen!");
-  NS_ASSERTION(!nsContentUtils::IsFullscreenApiContentOnly() ||
-               !nsContentUtils::IsChromeDoc(this),
-               "Should not run RestorePreviousFullScreenState() on "
-               "chrome document when fullscreen is content only");
 
   if (!IsFullScreenDoc() || !GetWindow() || FullscreenRoots::IsEmpty()) {
     return;
@@ -11411,7 +11355,7 @@ nsDocument::RestorePreviousFullScreenState()
         // as necessary.
         nsAutoString origin;
         nsContentUtils::GetUTFOrigin(doc->NodePrincipal(), origin);
-        nsIDocument* root = GetFullscreenRootDocument(doc);
+        nsIDocument* root = nsContentUtils::GetRootDocument(doc);
         nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
         os->NotifyObservers(root, "fullscreen-origin-change", origin.get());
       }
@@ -11423,8 +11367,8 @@ nsDocument::RestorePreviousFullScreenState()
   if (doc == nullptr) {
     // We moved all documents in this doctree out of fullscreen mode,
     // move the top-level window out of fullscreen mode.
-    NS_ASSERTION(!GetFullscreenRootDocument(this)->IsFullScreenDoc(),
-      "Should have cleared all docs' stacks");
+    NS_ASSERTION(!nsContentUtils::GetRootDocument(this)->IsFullScreenDoc(),
+                 "Should have cleared all docs' stacks");
     nsRefPtr<AsyncEventDispatcher> asyncDispatcher = new AsyncEventDispatcher(
       this, NS_LITERAL_STRING("MozExitedDomFullscreen"), true, true);
     asyncDispatcher->PostDOMEvent();
@@ -11511,8 +11455,7 @@ LogFullScreenDenied(bool aLogFailure, const char* aMessage, nsIDocument* aDoc)
 nsresult
 nsDocument::AddFullscreenApprovedObserver()
 {
-  if (mHasFullscreenApprovedObserver ||
-      !Preferences::GetBool("full-screen-api.approval-required")) {
+  if (mHasFullscreenApprovedObserver) {
     return NS_OK;
   }
 
@@ -11700,7 +11643,7 @@ nsresult nsDocument::RemoteFrameFullscreenChanged(nsIDOMElement* aFrameElement,
   // it can show a warning or approval UI.
   if (!aOrigin.IsEmpty()) {
     nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
-    os->NotifyObservers(GetFullscreenRootDocument(this),
+    os->NotifyObservers(nsContentUtils::GetRootDocument(this),
                         "fullscreen-origin-change",
                         PromiseFlatString(aOrigin).get());
   }
@@ -11743,13 +11686,6 @@ nsDocument::RequestFullScreen(Element* aElement,
   }
   if (!GetWindow()) {
     LogFullScreenDenied(true, "FullScreenDeniedLostWindow", this);
-    return;
-  }
-  if (nsContentUtils::IsFullscreenApiContentOnly() &&
-      nsContentUtils::IsChromeDoc(this)) {
-    // Block fullscreen requests in the chrome document when the fullscreen API
-    // is configured for content only.
-    LogFullScreenDenied(true, "FullScreenDeniedContentOnly", this);
     return;
   }
   if (!IsFullScreenEnabled(aWasCallerChrome, true)) {
@@ -11798,7 +11734,7 @@ nsDocument::RequestFullScreen(Element* aElement,
 
   // Remember the root document, so that if a full-screen document is hidden
   // we can reset full-screen state in the remaining visible full-screen documents.
-  nsIDocument* fullScreenRootDoc = GetFullscreenRootDocument(this);
+  nsIDocument* fullScreenRootDoc = nsContentUtils::GetRootDocument(this);
   if (fullScreenRootDoc->IsFullScreenDoc()) {
     // A document is already in fullscreen, unlock the mouse pointer
     // before setting a new document to fullscreen
@@ -11912,7 +11848,7 @@ nsDocument::RequestFullScreen(Element* aElement,
   if (aNotifyOnOriginChange &&
       !nsContentUtils::HaveEqualPrincipals(previousFullscreenDoc, this)) {
     nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
-    nsIDocument* root = GetFullscreenRootDocument(this);
+    nsIDocument* root = nsContentUtils::GetRootDocument(this);
     nsAutoString origin;
     nsContentUtils::GetUTFOrigin(NodePrincipal(), origin);
     os->NotifyObservers(root, "fullscreen-origin-change", origin.get());

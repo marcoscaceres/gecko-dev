@@ -336,7 +336,7 @@ namespace {
 static NS_DEFINE_CID(kParserServiceCID, NS_PARSERSERVICE_CID);
 static NS_DEFINE_CID(kCParserCID, NS_PARSER_CID);
 
-static PLDHashTable* sEventListenerManagersHash;
+static PLDHashTable2* sEventListenerManagersHash;
 
 class DOMEventListenerManagersHashReporter final : public nsIMemoryReporter
 {
@@ -498,7 +498,7 @@ nsContentUtils::Init()
     };
 
     sEventListenerManagersHash =
-      new PLDHashTable(&hash_table_ops, sizeof(EventListenerManagerMapEntry));
+      new PLDHashTable2(&hash_table_ops, sizeof(EventListenerManagerMapEntry));
 
     RegisterStrongMemoryReporter(new DOMEventListenerManagersHashReporter());
   }

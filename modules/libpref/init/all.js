@@ -453,6 +453,11 @@ pref("media.mediasource.whitelist", false);
 pref("media.mediasource.mp4.enabled", true);
 pref("media.mediasource.webm.enabled", false);
 
+// Enable new MediaFormatReader architecture for mp4 in MSE
+pref("media.mediasource.format-reader.mp4", true);
+// Enable new MediaFormatReader architecture for plain mp4.
+pref("media.format-reader.mp4", true);
+
 #ifdef MOZ_WEBSPEECH
 pref("media.webspeech.recognition.enable", false);
 pref("media.webspeech.synth.enabled", false);
@@ -565,9 +570,8 @@ pref("apz.test.logging_enabled", false);
 pref("gfx.hidpi.enabled", 2);
 #endif
 
-#if !defined(MOZ_WIDGET_GONK) && !defined(MOZ_WIDGET_ANDROID)
-// Containerless scrolling for root frames does not yet pass tests on Android
-// or B2G.
+#if !defined(MOZ_WIDGET_ANDROID)
+// Containerless scrolling for root frames does not yet pass tests on Android.
 pref("layout.scroll.root-frame-containers", false);
 #endif
 
@@ -695,6 +699,8 @@ pref("canvas.hitregions.enabled", false);
 pref("canvas.filters.enabled", false);
 // Add support for canvas path objects
 pref("canvas.path.enabled", true);
+// captureStream() on canvas disabled by default
+pref("canvas.capturestream.enabled", false);
 
 // We want the ability to forcibly disable platform a11y, because
 // some non-a11y-related components attempt to bring it up.  See bug
@@ -4605,6 +4611,12 @@ pref("caret.manages-android-actionbar", false);
 
 // New implementation to unify touch-caret and selection-carets.
 pref("layout.accessiblecaret.enabled", false);
+
+// CSS attributes of the AccessibleCaret in CSS pixels.
+pref("layout.accessiblecaret.width", "44.0");
+pref("layout.accessiblecaret.height", "47.0");
+pref("layout.accessiblecaret.margin-left", "-23.5");
+pref("layout.accessiblecaret.bar.width", "2.0");
 
 // Timeout in milliseconds to hide the accessiblecaret under cursor mode while
 // no one touches it. Set the value to 0 to disable this feature.

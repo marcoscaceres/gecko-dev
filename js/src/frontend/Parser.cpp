@@ -698,8 +698,9 @@ Parser<ParseHandler>::parse(JSObject* chain)
      *   protected from the GC by a root or a stack frame reference.
      */
     Directives directives(options().strictOption);
-    GlobalSharedContext globalsc(context, directives, options().extraWarningsOption,
-                                 /* allowSuperProperty = */ false);
+    GlobalSharedContext globalsc(context, directives,
+                                 /* staticEvalScope = */ nullptr,
+                                 options().extraWarningsOption);
     ParseContext<ParseHandler> globalpc(this, /* parent = */ nullptr, ParseHandler::null(),
                                         &globalsc, /* newDirectives = */ nullptr,
                                         /* staticLevel = */ 0, /* bodyid = */ 0,
@@ -1970,7 +1971,8 @@ Parser<FullParseHandler>::checkFunctionDefinition(HandlePropertyName funName,
         // while LazyScript::{begin,end} offsets are relative to the outermost
         // script source.
         uint32_t userbufBase = lazyOuter->begin() - lazyOuter->column();
-        tokenStream.advance(fun->lazyScript()->end() - userbufBase);
+        if (!tokenStream.advance(fun->lazyScript()->end() - userbufBase))
+            return false;
 
         *pbodyProcessed = true;
         return true;
@@ -2566,7 +2568,7 @@ Parser<ParseHandler>::functionArgsAndBodyGeneric(InHandling inHandling,
     if (!tokenStream.getToken(&tt, TokenStream::Operand))
         return false;
     if (tt != TOK_LC) {
-        if (funbox->isStarGenerator()) {
+        if (funbox->isStarGenerator() || kind == Method || kind == ClassConstructor) {
             report(ParseError, false, null(), JSMSG_CURLY_BEFORE_BODY);
             return false;
         }
@@ -7923,7 +7925,7 @@ Parser<ParseHandler>::memberExpr(YieldHandling yieldHandling, TokenKind tt, bool
 
                     // If we're in a method, mark the method as requiring
                     // support for 'super', since direct eval code can use it.
-                    // (If we're not in a method, that's fine, so ignore the 
+                    // (If we're not in a method, that's fine, so ignore the
                     // return value.)
                     checkAndMarkSuperScope();
                 }

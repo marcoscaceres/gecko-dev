@@ -1505,6 +1505,7 @@ AsyncPanZoomController::AllowScrollHandoffInWheelTransaction() const
 nsEventStatus AsyncPanZoomController::OnScrollWheel(const ScrollWheelInput& aEvent)
 {
   LayoutDevicePoint delta = GetScrollWheelDelta(aEvent);
+  APZC_LOG("%p got a scroll-wheel with delta %s\n", this, Stringify(delta).c_str());
 
   if ((delta.x || delta.y) &&
       !CanScrollWithWheel(delta) &&
@@ -2899,6 +2900,7 @@ void AsyncPanZoomController::NotifyLayersUpdated(const FrameMetrics& aLayerMetri
     mFrameMetrics.SetLineScrollAmount(aLayerMetrics.GetLineScrollAmount());
     mFrameMetrics.SetPageScrollAmount(aLayerMetrics.GetPageScrollAmount());
     mFrameMetrics.SetClipRect(aLayerMetrics.GetClipRect());
+    mFrameMetrics.SetIsLayersIdRoot(aLayerMetrics.IsLayersIdRoot());
 
     if (scrollOffsetUpdated) {
       APZC_LOG("%p updating scroll offset from %s to %s\n", this,

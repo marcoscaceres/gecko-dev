@@ -14,7 +14,7 @@ loader.lazyRequireGetter(this, "EventEmitter",
 loader.lazyRequireGetter(this, "L10N",
   "devtools/performance/global", true);
 loader.lazyRequireGetter(this, "TIMELINE_BLUEPRINT",
-  "devtools/performance/global", true);
+  "devtools/performance/markers", true);
 loader.lazyRequireGetter(this, "MarkerUtils",
   "devtools/performance/marker-utils");
 
@@ -47,6 +47,14 @@ MarkerDetails.prototype = {
    */
   set width(value) {
     this._parent.setAttribute("width", value);
+  },
+
+  /**
+   * Sets this view's visibility.
+   * @param boolean
+   */
+  set hidden(value) {
+    this._parent.hidden = value;
   },
 
   /**

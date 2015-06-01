@@ -11,7 +11,7 @@
 const { Cc, Ci, Cu, Cr } = require("chrome");
 const { Heritage } = require("resource:///modules/devtools/ViewHelpers.jsm");
 const { AbstractTreeItem } = require("resource:///modules/devtools/AbstractTreeItem.jsm");
-const { TIMELINE_BLUEPRINT: ORIGINAL_BP } = require("devtools/performance/global");
+const { TIMELINE_BLUEPRINT: ORIGINAL_BP } = require("devtools/performance/markers");
 
 loader.lazyRequireGetter(this, "MarkerUtils",
   "devtools/performance/marker-utils");
@@ -174,12 +174,7 @@ MarkerView.prototype = Heritage.extend(AbstractTreeItem.prototype, {
    * @param nsIDOMNode arrowNode
    */
   _buildMarkerCells: function(doc, targetNode, arrowNode) {
-    // Root markers are an implementation detail and shouldn't be shown.
     let marker = this.marker;
-    if (marker.name == "(root)") {
-      return;
-    }
-
     let style = this.root._blueprint[marker.name];
     let startTime = this.root._interval.startTime;
     let endTime = this.root._interval.endTime;

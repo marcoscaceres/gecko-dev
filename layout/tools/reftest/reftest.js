@@ -755,9 +755,6 @@ function BuildConditionSandbox(aURL) {
         dump("REFTEST INFO | " + JSON.stringify(CU.waiveXrays(sandbox)) + " \n");
         gDumpedConditionSandbox = true;
     }
-
-    // Graphics features
-    sandbox.supportsRepeatResampling = !sandbox.cocoaWidget;
     return sandbox;
 }
 
@@ -838,7 +835,7 @@ function ReadManifest(aURL, inherited_status)
     var lineNo = 0;
     var urlprefix = "";
     var defaultTestPrefSettings = [], defaultRefPrefSettings = [];
-    for each (var str in lines) {
+    for (var str of lines) {
         ++lineNo;
         if (str.charAt(0) == "#")
             continue; // entire line was a comment
@@ -926,7 +923,7 @@ function ReadManifest(aURL, inherited_status)
                 var [precondition_str, fallback_action] = args;
                 var preconditions = precondition_str.split(/&&/);
                 cond = false;
-                for each (var precondition in preconditions) {
+                for (var precondition of preconditions) {
                     if (precondition === "debugMode") {
                         // Currently unimplemented. Requires asynchronous
                         // JSD call + getting an event while no JS is running
@@ -1771,7 +1768,7 @@ function LoadFailed(why)
 function RemoveExpectedCrashDumpFiles()
 {
     if (gExpectingProcessCrash) {
-        for each (let crashFilename in gExpectedCrashDumpFiles) {
+        for (let crashFilename of gExpectedCrashDumpFiles) {
             let file = gCrashDumpDir.clone();
             file.append(crashFilename);
             if (file.exists()) {

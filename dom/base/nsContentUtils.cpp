@@ -218,6 +218,7 @@ nsIPrincipal *nsContentUtils::sNullSubjectPrincipal;
 nsIParserService *nsContentUtils::sParserService = nullptr;
 nsNameSpaceManager *nsContentUtils::sNameSpaceManager;
 nsIIOService *nsContentUtils::sIOService;
+nsIUUIDGenerator *nsContentUtils::sUUIDGenerator;
 nsIConsoleService *nsContentUtils::sConsoleService;
 nsDataHashtable<nsISupportsHashKey, EventNameMapping>* nsContentUtils::sAtomEventTable = nullptr;
 nsDataHashtable<nsStringHashKey, EventNameMapping>* nsContentUtils::sStringEventTable = nullptr;
@@ -550,6 +551,13 @@ nsContentUtils::Init()
 #endif
 
   Element::InitCCCallbacks();
+
+  nsCOMPtr<nsIUUIDGenerator> uuidGenerator =
+    do_GetService("@mozilla.org/uuid-generator;1", &rv);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+  uuidGenerator.forget(&sUUIDGenerator);
 
   sInitialized = true;
 
@@ -1803,6 +1811,7 @@ nsContentUtils::Shutdown()
   NS_IF_RELEASE(sNullSubjectPrincipal);
   NS_IF_RELEASE(sParserService);
   NS_IF_RELEASE(sIOService);
+  NS_IF_RELEASE(sUUIDGenerator);
   NS_IF_RELEASE(sLineBreaker);
   NS_IF_RELEASE(sWordBreaker);
   NS_IF_RELEASE(sBidiKeyboard);
@@ -3985,28 +3994,20 @@ nsContentUtils::MaybeFireNodeRemoved(nsINode* aChild, nsINode* aParent,
   }
 }
 
-PLDHashOperator
-ListenerEnumerator(PLDHashTable* aTable, PLDHashEntryHdr* aEntry,
-                   uint32_t aNumber, void* aArg)
+void
+nsContentUtils::UnmarkGrayJSListenersInCCGenerationDocuments()
 {
-  EventListenerManagerMapEntry* entry =
-    static_cast<EventListenerManagerMapEntry*>(aEntry);
-  if (entry) {
+  if (!sEventListenerManagersHash) {
+    return;
+  }
+
+  for (auto i = sEventListenerManagersHash->Iter(); !i.Done(); i.Next()) {
+    auto entry = static_cast<EventListenerManagerMapEntry*>(i.Get());
     nsINode* n = static_cast<nsINode*>(entry->mListenerManager->GetTarget());
     if (n && n->IsInDoc() &&
         nsCCUncollectableMarker::InGeneration(n->OwnerDoc()->GetMarkedCCGeneration())) {
       entry->mListenerManager->MarkForCC();
     }
-  }
-  return PL_DHASH_NEXT;
-}
-
-void
-nsContentUtils::UnmarkGrayJSListenersInCCGenerationDocuments(uint32_t aGeneration)
-{
-  if (sEventListenerManagersHash) {
-    PL_DHashTableEnumerate(sEventListenerManagersHash, ListenerEnumerator,
-                           &aGeneration);
   }
 }
 
@@ -7158,6 +7159,19 @@ nsContentUtils::IsJavascriptMIMEType(const nsAString& aMIMEType)
   return false;
 }
 
+nsresult
+nsContentUtils::GenerateUUIDInPlace(nsID& aUUID)
+{
+  MOZ_ASSERT(sUUIDGenerator);
+
+  nsresult rv = sUUIDGenerator->GenerateUUIDInPlace(&aUUID);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  return NS_OK;
+}
+
 uint64_t
 nsContentUtils::GetInnerWindowID(nsIRequest* aRequest)
 {
@@ -7818,4 +7832,32 @@ nsContentUtils::GetWindowRoot(nsIDocument* aDoc)
     }
   }
   return nullptr;
+}
+
+/* static */
+nsContentPolicyType
+nsContentUtils::InternalContentPolicyTypeToExternal(nsContentPolicyType aType)
+{
+  switch (aType) {
+  case nsIContentPolicy::TYPE_INTERNAL_SCRIPT:
+  case nsIContentPolicy::TYPE_INTERNAL_WORKER:
+  case nsIContentPolicy::TYPE_INTERNAL_SHARED_WORKER:
+    return nsIContentPolicy::TYPE_SCRIPT;
+
+  case nsIContentPolicy::TYPE_INTERNAL_EMBED:
+  case nsIContentPolicy::TYPE_INTERNAL_OBJECT:
+    return nsIContentPolicy::TYPE_OBJECT;
+
+  case nsIContentPolicy::TYPE_INTERNAL_FRAME:
+  case nsIContentPolicy::TYPE_INTERNAL_IFRAME:
+    return nsIContentPolicy::TYPE_SUBDOCUMENT;
+
+  case nsIContentPolicy::TYPE_INTERNAL_AUDIO:
+  case nsIContentPolicy::TYPE_INTERNAL_VIDEO:
+  case nsIContentPolicy::TYPE_INTERNAL_TRACK:
+    return nsIContentPolicy::TYPE_MEDIA;
+
+  default:
+    return aType;
+  }
 }

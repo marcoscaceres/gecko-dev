@@ -464,8 +464,10 @@ jit::FinishOffThreadBuilder(JSContext* cx, IonBuilder* builder)
     // Clean the references to the pending IonBuilder, if we just finished it.
     if (builder->script()->hasIonScript() && builder->script()->pendingIonBuilder() == builder)
         builder->script()->setPendingIonBuilder(cx, nullptr);
+
+    // If the builder is still in one of the helper thread list, then remove it.
     if (builder->isInList())
-        builder->remove();
+        builder->removeFrom(HelperThreadState().ionLazyLinkList());
 
     // Clear the recompiling flag of the old ionScript, since we continue to
     // use the old ionScript if recompiling fails.
@@ -579,7 +581,7 @@ jit::LazyLinkTopActivation(JSContext* cx)
     OnIonCompilationInfo info(builder->alloc().lifoAlloc());
 
     // Remove from pending.
-    builder->remove();
+    builder->removeFrom(HelperThreadState().ionLazyLinkList());
 
     {
         AutoEnterAnalysis enterTypes(cx);
@@ -1216,7 +1218,7 @@ IonScript::purgeCaches()
 
     AutoWritableJitCode awjc(method());
     for (size_t i = 0; i < numCaches(); i++)
-        getCacheFromIndex(i).reset();
+        getCacheFromIndex(i).reset(DontReprotect);
 }
 
 void
@@ -1653,14 +1655,18 @@ GenerateLIR(MIRGenerator* mir)
     {
         AutoTraceLog log(logger, TraceLogger_RegisterAllocation);
 
-        switch (mir->optimizationInfo().registerAllocator()) {
-          case RegisterAllocator_Backtracking: {
+        IonRegisterAllocator allocator = mir->optimizationInfo().registerAllocator();
+
+        switch (allocator) {
+          case RegisterAllocator_Backtracking:
+          case RegisterAllocator_Testbed: {
 #ifdef DEBUG
             if (!integrity.record())
                 return nullptr;
 #endif
 
-            BacktrackingAllocator regalloc(mir, &lirgen, *lir);
+            BacktrackingAllocator regalloc(mir, &lirgen, *lir,
+                                           allocator == RegisterAllocator_Testbed);
             if (!regalloc.go())
                 return nullptr;
 

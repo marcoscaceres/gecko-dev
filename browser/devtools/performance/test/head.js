@@ -12,6 +12,7 @@ let { devtools } = Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
 let { gDevTools } = Cu.import("resource:///modules/devtools/gDevTools.jsm", {});
 let { DevToolsUtils } = Cu.import("resource://gre/modules/devtools/DevToolsUtils.jsm", {});
 let { DebuggerServer } = Cu.import("resource://gre/modules/devtools/dbg-server.jsm", {});
+let { console } = devtools.require("resource://gre/modules/devtools/Console.jsm");
 let { merge } = devtools.require("sdk/util/object");
 let { generateUUID } = Cc["@mozilla.org/uuid-generator;1"].getService(Ci.nsIUUIDGenerator);
 let { getPerformanceFront, PerformanceFront } = devtools.require("devtools/performance/front");
@@ -61,6 +62,7 @@ let DEFAULT_PREFS = [
   "devtools.performance.profiler.buffer-size",
   "devtools.performance.profiler.sample-frequency-khz",
   "devtools.performance.ui.experimental",
+  "devtools.performance.timeline.hidden-markers",
 ].reduce((prefs, pref) => {
   prefs[pref] = Preferences.get(pref);
   return prefs;

@@ -863,8 +863,19 @@ LoginManagerPrompter.prototype = {
       updateButtonLabel();
     };
 
-    let onPasswordFocus = () => {
-      chromeDoc.getElementById("password-notification-password").type = "";
+    let onPasswordFocus = (focusEvent) => {
+      let passwordField = chromeDoc.getElementById("password-notification-password");
+      // Gets the caret position before changing the type of the textbox
+      let selectionStart = passwordField.selectionStart;
+      let selectionEnd = passwordField.selectionEnd;
+      if (focusEvent.rangeParent != null) {
+        // Check for a click over the SHOW placeholder
+        selectionStart = passwordField.value.length;
+        selectionEnd = passwordField.value.length;
+      }
+      passwordField.type = "";
+      passwordField.selectionStart = selectionStart;
+      passwordField.selectionEnd = selectionEnd;
     };
 
     let onPasswordBlur = () => {
@@ -938,6 +949,7 @@ LoginManagerPrompter.prototype = {
       secondaryActions,
       {
         timeout: Date.now() + 10000,
+        origin: login.hostname,
         persistWhileVisible: true,
         passwordNotificationType: type,
         eventCallback: function (topic) {

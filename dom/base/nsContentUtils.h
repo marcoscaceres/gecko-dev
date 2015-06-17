@@ -85,6 +85,7 @@ class nsIStringBundleService;
 class nsISupportsArray;
 class nsISupportsHashKey;
 class nsIURI;
+class nsIUUIDGenerator;
 class nsIWidget;
 class nsIWordBreaker;
 class nsIXPConnect;
@@ -853,6 +854,11 @@ public:
    */
   static uint32_t ParseSandboxAttributeToFlags(const nsAttrValue* sandboxAttr);
 
+  /**
+   * Helper function that generates a UUID.
+   */
+  static nsresult GenerateUUIDInPlace(nsID& aUUID);
+
 
   /**
    * Fill (with the parameters given) the localized string named |aKey| in
@@ -915,6 +921,11 @@ public:
    * Return the content policy service
    */
   static nsIContentPolicy *GetContentPolicy();
+
+  /**
+   * Map internal content policy types to external ones.
+   */
+  static nsContentPolicyType InternalContentPolicyTypeToExternal(nsContentPolicyType aType);
 
   /**
    * Quick helper to determine whether there are any mutation listeners
@@ -1124,7 +1135,7 @@ public:
   static mozilla::EventListenerManager*
     GetExistingListenerManagerForNode(const nsINode* aNode);
 
-  static void UnmarkGrayJSListenersInCCGenerationDocuments(uint32_t aGeneration);
+  static void UnmarkGrayJSListenersInCCGenerationDocuments();
 
   /**
    * Remove the eventlistener manager for aNode.
@@ -2438,6 +2449,7 @@ private:
   static nsNameSpaceManager *sNameSpaceManager;
 
   static nsIIOService *sIOService;
+  static nsIUUIDGenerator *sUUIDGenerator;
 
   static bool sImgLoaderInitialized;
   static void InitImgLoader();

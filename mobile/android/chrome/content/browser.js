@@ -14,13 +14,14 @@ Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/AddonManager.jsm");
 Cu.import("resource://gre/modules/DelayedInit.jsm");
-Cu.import('resource://gre/modules/Payment.jsm');
-Cu.import("resource://gre/modules/NotificationDB.jsm");
-Cu.import("resource://gre/modules/SpatialNavigation.jsm");
 
 if (AppConstants.ACCESSIBILITY) {
-  Cu.import("resource://gre/modules/accessibility/AccessFu.jsm");
+  XPCOMUtils.defineLazyModuleGetter(this, "AccessFu",
+                                    "resource://gre/modules/accessibility/AccessFu.jsm");
 }
+
+XPCOMUtils.defineLazyModuleGetter(this, "SpatialNavigation",
+                                  "resource://gre/modules/SpatialNavigation.jsm");
 
 XPCOMUtils.defineLazyModuleGetter(this, "DownloadNotifications",
                                   "resource://gre/modules/DownloadNotifications.jsm");
@@ -251,6 +252,74 @@ if (AppConstants.MOZ_WEBRTC) {
     "@mozilla.org/mediaManagerService;1", "nsIMediaManagerService");
 }
 
+XPCOMUtils.defineLazyModuleGetter(
+  this,
+  "DOMApplicationRegistry",
+  "resource://gre/modules/Webapps.jsm",
+  null,
+  function() {
+    XPCOMUtils.defineLazyServiceGetter(this, "ppmm",
+                                   "@mozilla.org/parentprocessmessagemanager;1",
+                                   "nsIMessageBroadcaster");
+
+    // Keep the messages in sync with the initialization in Webapps.jsm (bug 1171013).
+    this.messages = ["Webapps:Install",
+                     "Webapps:Uninstall",
+                     "Webapps:GetSelf",
+                     "Webapps:CheckInstalled",
+                     "Webapps:GetInstalled",
+                     "Webapps:GetNotInstalled",
+                     "Webapps:Launch",
+                     "Webapps:LocationChange",
+                     "Webapps:InstallPackage",
+                     "Webapps:GetList",
+                     "Webapps:RegisterForMessages",
+                     "Webapps:UnregisterForMessages",
+                     "Webapps:CancelDownload",
+                     "Webapps:CheckForUpdate",
+                     "Webapps:Download",
+                     "Webapps:ApplyDownload",
+                     "Webapps:Install:Return:Ack",
+                     "Webapps:AddReceipt",
+                     "Webapps:RemoveReceipt",
+                     "Webapps:ReplaceReceipt",
+                     "Webapps:RegisterBEP",
+                     "Webapps:Export",
+                     "Webapps:Import",
+                     "Webapps:GetIcon",
+                     "Webapps:ExtractManifest",
+                     "Webapps:SetEnabled",
+                     "child-process-shutdown"];
+
+    this.messages.forEach(msgName => {
+      this.ppmm.addMessageListener(msgName, this);
+    });
+  },
+  function() {
+    this.messages.forEach(msgName => {
+      this.ppmm.removeMessageListener(msgName, this);
+    });
+  },
+  {
+    receiveMessage: function() {
+      // This is called only once when we receive a message for the first time.
+      // With this, we trigger the import of Webapps.jsm and forward the message
+      // to the real registry.
+      return DOMApplicationRegistry.receiveMessage.apply(
+          DOMApplicationRegistry, arguments);
+    }
+  }
+);
+
+XPCOMUtils.defineLazyModuleGetter(this, "Log",
+  "resource://gre/modules/AndroidLog.jsm", "AndroidLog");
+
+// Define the "dump" function as a binding of the Log.d function so it specifies
+// the "debug" priority and a log tag.
+function dump(msg) {
+  Log.d("Browser", msg);
+}
+
 const kStateActive = 0x00000001; // :active pseudoclass for elements
 
 const kXLinkNamespace = "http://www.w3.org/1999/xlink";
@@ -259,12 +328,6 @@ const kDefaultCSSViewportWidth = 980;
 const kDefaultCSSViewportHeight = 480;
 
 const kViewportRemeasureThrottle = 500;
-
-let Log = Cu.import("resource://gre/modules/AndroidLog.jsm", {}).AndroidLog;
-
-// Define the "dump" function as a binding of the Log.d function so it specifies
-// the "debug" priority and a log tag.
-let dump = Log.d.bind(null, "Browser");
 
 function doChangeMaxLineBoxWidth(aWidth) {
   gReflowPending = null;
@@ -351,6 +414,10 @@ const kFormHelperModeDisabled = 0;
 const kFormHelperModeEnabled = 1;
 const kFormHelperModeDynamic = 2;   // disabled on tablets
 const kMaxHistoryListSize = 50;
+
+function InitLater(fn, object, name) {
+  return DelayedInit.schedule(fn, object, name, 15000 /* 15s max wait */);
+}
 
 var BrowserApp = {
   _tabs: [],
@@ -448,28 +515,18 @@ var BrowserApp = {
     window.addEventListener("MozShowFullScreenWarning", showFullScreenWarning, true);
 
     NativeWindow.init();
-    LightWeightThemeWebInstaller.init();
     FormAssistant.init();
     IndexedDB.init();
     HealthReportStatusListener.init();
     XPInstallObserver.init();
     CharacterEncoding.init();
     ActivityObserver.init();
-    // TODO: replace with Android implementation of WebappOSUtils.isLaunchable.
-    Cu.import("resource://gre/modules/Webapps.jsm");
-    DOMApplicationRegistry.allAppsLaunchable = true;
     RemoteDebugger.init();
     UserAgentOverrides.init();
     DesktopUserAgent.init();
     Distribution.init();
     Tabs.init();
     SearchEngines.init();
-    if (AppConstants.ACCESSIBILITY) {
-      AccessFu.attach(window);
-    }
-    if (AppConstants.NIGHTLY_BUILD) {
-      ShumwayUtils.init();
-    }
 
     let url = null;
     if ("arguments" in window) {
@@ -480,11 +537,6 @@ var BrowserApp = {
       if (window.arguments[2])
         gScreenHeight = window.arguments[2];
     }
-
-    // The order that context menu items are added is important
-    // Make sure the "Open in App" context menu item appears at the bottom of the list
-    this.initContextMenu();
-    ExternalApps.init();
 
     // XXX maybe we don't do this if the launch was kicked off from external
     Services.io.offline = false;
@@ -514,8 +566,21 @@ var BrowserApp = {
       // Tiles reporting is disabled.
     }
 
-    let mm = window.getGroupMessageManager("browsers");
-    mm.loadFrameScript("chrome://browser/content/content.js", true);
+    InitLater(() => {
+      // The order that context menu items are added is important
+      // Make sure the "Open in App" context menu item appears at the bottom of the list
+      this.initContextMenu();
+      ExternalApps.init();
+    }, NativeWindow, "contextmenus");
+
+    InitLater(() => {
+      let mm = window.getGroupMessageManager("browsers");
+      mm.loadFrameScript("chrome://browser/content/content.js", true);
+    });
+
+    if (AppConstants.ACCESSIBILITY) {
+      InitLater(() => AccessFu.attach(window), window, "AccessFu");
+    }
 
     // Notify Java that Gecko has loaded.
     Messaging.sendRequest({ type: "Gecko:Ready" });
@@ -523,19 +588,21 @@ var BrowserApp = {
     this.deck.addEventListener("DOMContentLoaded", function BrowserApp_delayedStartup() {
       BrowserApp.deck.removeEventListener("DOMContentLoaded", BrowserApp_delayedStartup, false);
 
-      function InitLater(fn, object, name) {
-        return DelayedInit.schedule(fn, object, name, 15000 /* 15s max wait */);
-      }
+      InitLater(() => Cu.import("resource://gre/modules/NotificationDB.jsm"));
+      InitLater(() => Cu.import("resource://gre/modules/Payment.jsm"));
 
       InitLater(() => Services.obs.notifyObservers(window, "browser-delayed-startup-finished", ""));
       InitLater(() => Messaging.sendRequest({ type: "Gecko:DelayedStartup" }));
 
       if (AppConstants.NIGHTLY_BUILD) {
+        InitLater(() => ShumwayUtils.init(), window, "ShumwayUtils");
         InitLater(() => Telemetry.addData("TRACKING_PROTECTION_ENABLED",
             Services.prefs.getBoolPref("privacy.trackingprotection.enabled")));
         InitLater(() => WebcompatReporter.init());
       }
 
+      InitLater(() => LightWeightThemeWebInstaller.init());
+      InitLater(() => SpatialNavigation.init(BrowserApp.deck, null), window, "SpatialNavigation");
       InitLater(() => CastingApps.init(), window, "CastingApps");
       InitLater(() => Services.search.init(), Services, "search");
       InitLater(() => DownloadNotifications.init(), window, "DownloadNotifications");
@@ -546,6 +613,7 @@ var BrowserApp = {
       }
 
       InitLater(() => Cc["@mozilla.org/login-manager;1"].getService(Ci.nsILoginManager));
+      InitLater(() => LoginManagerParent.init(), window, "LoginManagerParent");
 
       InitLater(() => {
           BrowserApp.gmpInstallManager = new GMPInstallManager();
@@ -2348,7 +2416,9 @@ var NativeWindow = {
     DEFAULT_HTML5_ORDER: -1, // Sort order for HTML5 context menu items
 
     init: function() {
-      BrowserApp.deck.addEventListener("contextmenu", this.show.bind(this), false);
+      // Accessing "NativeWindow.contextmenus" initializes context menus if needed.
+      BrowserApp.deck.addEventListener(
+          "contextmenu", (e) => NativeWindow.contextmenus.show(e), false);
     },
 
     add: function() {
@@ -5037,10 +5107,9 @@ var BrowserEventHandler = {
     BrowserApp.deck.addEventListener("DOMUpdatePageReport", PopupBlockerObserver.onUpdatePageReport, false);
     BrowserApp.deck.addEventListener("touchstart", this, true);
     BrowserApp.deck.addEventListener("MozMouseHittest", this, true);
-    BrowserApp.deck.addEventListener("click", InputWidgetHelper, true);
-    BrowserApp.deck.addEventListener("click", SelectHelper, true);
 
-    SpatialNavigation.init(BrowserApp.deck, null);
+    InitLater(() => BrowserApp.deck.addEventListener("click", InputWidgetHelper, true));
+    InitLater(() => BrowserApp.deck.addEventListener("click", SelectHelper, true));
 
     document.addEventListener("MozMagnifyGesture", this, true);
 
@@ -5680,8 +5749,6 @@ var FormAssistant = {
     BrowserApp.deck.addEventListener("click", this, true);
     BrowserApp.deck.addEventListener("input", this, false);
     BrowserApp.deck.addEventListener("pageshow", this, false);
-
-    LoginManagerParent.init();
   },
 
   observe: function(aSubject, aTopic, aData) {
@@ -6018,10 +6085,10 @@ let HealthReportStatusListener = {
     try {
       AddonManager.addAddonListener(this);
     } catch (ex) {
-      console.log("Failed to initialize add-on status listener. FHR cannot report add-on state. " + ex);
+      dump("Failed to initialize add-on status listener. FHR cannot report add-on state. " + ex);
     }
 
-    console.log("Adding HealthReport:RequestSnapshot observer.");
+    dump("Adding HealthReport:RequestSnapshot observer.");
     Services.obs.addObserver(this, "HealthReport:RequestSnapshot", false);
     Services.prefs.addObserver(this.PREF_ACCEPT_LANG, this, false);
     Services.prefs.addObserver(this.PREF_BLOCKLIST_ENABLED, this, false);
@@ -6189,19 +6256,21 @@ let HealthReportStatusListener = {
 };
 
 var XPInstallObserver = {
-  init: function xpi_init() {
-    Services.obs.addObserver(XPInstallObserver, "addon-install-blocked", false);
-    Services.obs.addObserver(XPInstallObserver, "addon-install-started", false);
+  init: function() {
+    Services.obs.addObserver(this, "addon-install-blocked", false);
+    Services.obs.addObserver(this, "addon-install-started", false);
+    Services.obs.addObserver(this, "xpi-signature-changed", false);
+    Services.obs.addObserver(this, "browser-delayed-startup-finished", false);
 
-    AddonManager.addInstallListener(XPInstallObserver);
+    AddonManager.addInstallListener(this);
   },
 
-  observe: function xpi_observer(aSubject, aTopic, aData) {
+  observe: function(aSubject, aTopic, aData) {
     switch (aTopic) {
       case "addon-install-started":
         NativeWindow.toast.show(Strings.browser.GetStringFromName("alertAddonsDownloading"), "short");
         break;
-      case "addon-install-blocked":
+      case "addon-install-blocked": {
         let installInfo = aSubject.QueryInterface(Ci.amIWebInstallInfo);
         let tab = BrowserApp.getTabForBrowser(installInfo.browser);
         if (!tab)
@@ -6268,7 +6337,41 @@ var XPInstallObserver = {
         }
         NativeWindow.doorhanger.show(message, aTopic, buttons, tab.id);
         break;
+      }
+      case "xpi-signature-changed": {
+        if (JSON.parse(aData).disabled.length) {
+          this._notifyUnsignedAddonsDisabled();
+        }
+        break;
+      }
+      case "browser-delayed-startup-finished": {
+        let disabledAddons = AddonManager.getStartupChanges(AddonManager.STARTUP_CHANGE_DISABLED);
+        for (let id of disabledAddons) {
+          if (AddonManager.getAddonByID(id).signedState <= AddonManager.SIGNEDSTATE_MISSING) {
+            this._notifyUnsignedAddonsDisabled();
+            break;
+          }
+        }
+        break;
+      }
     }
+  },
+
+  _notifyUnsignedAddonsDisabled: function() {
+    new Prompt({
+      window: window,
+      title: Strings.browser.GetStringFromName("unsignedAddonsDisabled.title"),
+      message: Strings.browser.GetStringFromName("unsignedAddonsDisabled.message"),
+      buttons: [
+        Strings.browser.GetStringFromName("unsignedAddonsDisabled.viewAddons"),
+        Strings.browser.GetStringFromName("unsignedAddonsDisabled.dismiss")
+      ]
+    }).show((data) => {
+      if (data.button === 0) {
+        // TODO: Open about:addons to show only unsigned add-ons?
+        BrowserApp.addTab("about:addons", { parentId: BrowserApp.selectedTab.id });
+      }
+    });
   },
 
   onInstallEnded: function(aInstall, aAddon) {
@@ -6824,7 +6927,7 @@ var CharacterEncoding = {
   init: function init() {
     Services.obs.addObserver(this, "CharEncoding:Get", false);
     Services.obs.addObserver(this, "CharEncoding:Set", false);
-    this.sendState();
+    InitLater(() => this.sendState());
   },
 
   observe: function observe(aSubject, aTopic, aData) {

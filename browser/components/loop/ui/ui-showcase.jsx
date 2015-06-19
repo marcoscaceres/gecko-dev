@@ -270,6 +270,7 @@
   }));
 
   loop.store.StoreMixin.register({
+    activeRoomStore: activeRoomStore,
     conversationStore: conversationStore,
     feedbackStore: feedbackStore,
     textChatStore: textChatStore
@@ -370,7 +371,9 @@
     propTypes: {
       width: React.PropTypes.number,
       height: React.PropTypes.number,
-      onContentsRendered: React.PropTypes.func
+      onContentsRendered: React.PropTypes.func,
+      dashed: React.PropTypes.bool,
+      cssClass: React.PropTypes.string
     },
 
     makeId: function(prefix) {
@@ -378,6 +381,15 @@
     },
 
     render: function() {
+      var height = this.props.height;
+      var width = this.props.width;
+
+      // make room for a 1-pixel border on each edge
+      if (this.props.dashed) {
+        height += 2;
+        width += 2;
+      }
+
       var cx = React.addons.classSet;
       return (
         <div className="example">
@@ -385,10 +397,11 @@
             {this.props.summary}
             <a href={this.makeId("#")}>&nbsp;¶</a>
           </h3>
-          <div className={cx({comp: true, dashed: this.props.dashed})}
-               style={this.props.style}>
-            <Frame width={this.props.width} height={this.props.height}
-                   onContentsRendered={this.props.onContentsRendered}>
+          <div className="comp">
+            <Frame width={width} height={height}
+                   onContentsRendered={this.props.onContentsRendered}
+                   className={cx({dashed: this.props.dashed})}
+                   cssClass={this.props.cssClass}>
               {this.props.children}
             </Frame>
           </div>
@@ -815,8 +828,9 @@
           </Section>
 
           <Section name="StandaloneRoomView">
-            <FramedExample width={644} height={483}
-              summary="Standalone room conversation (ready)">
+            <FramedExample width={644} height={483} dashed={true}
+                           cssClass="standalone"
+                           summary="Standalone room conversation (ready)">
               <div className="standalone">
                 <StandaloneRoomView
                   dispatcher={dispatcher}
@@ -826,8 +840,9 @@
               </div>
             </FramedExample>
 
-            <FramedExample width={644} height={483}
+            <FramedExample width={644} height={483} dashed={true}
               summary="Standalone room conversation (joined)"
+              cssClass="standalone"
               onContentsRendered={joinedRoomStore.forcedUpdate}>
               <div className="standalone">
                 <StandaloneRoomView
@@ -838,7 +853,8 @@
               </div>
             </FramedExample>
 
-            <FramedExample width={644} height={483}
+            <FramedExample width={644} height={483} dashed={true}
+                           cssClass="standalone"
                            onContentsRendered={updatingActiveRoomStore.forcedUpdate}
                            summary="Standalone room conversation (has-participants, 644x483)">
                 <div className="standalone">
@@ -852,7 +868,8 @@
                 </div>
             </FramedExample>
 
-            <FramedExample width={644} height={483}
+            <FramedExample width={644} height={483} dashed={true}
+                           cssClass="standalone"
                            onContentsRendered={localFaceMuteRoomStore.forcedUpdate}
                            summary="Standalone room conversation (local face mute, has-participants, 644x483)">
               <div className="standalone">
@@ -865,7 +882,8 @@
               </div>
             </FramedExample>
 
-            <FramedExample width={644} height={483}
+            <FramedExample width={644} height={483} dashed={true}
+                           cssClass="standalone"
                            onContentsRendered={remoteFaceMuteRoomStore.forcedUpdate}
                            summary="Standalone room conversation (remote face mute, has-participants, 644x483)">
               <div className="standalone">
@@ -878,7 +896,8 @@
               </div>
             </FramedExample>
 
-            <FramedExample width={800} height={660}
+            <FramedExample width={800} height={660} dashed={true}
+                           cssClass="standalone"
                            onContentsRendered={updatingSharingRoomStore.forcedUpdate}
               summary="Standalone room convo (has-participants, receivingScreenShare, 800x660)">
                 <div className="standalone">
@@ -894,7 +913,8 @@
                 </div>
             </FramedExample>
 
-            <FramedExample width={644} height={483}
+            <FramedExample width={644} height={483} dashed={true}
+                           cssClass="standalone"
                            summary="Standalone room conversation (full - FFx user)">
               <div className="standalone">
                 <StandaloneRoomView
@@ -904,8 +924,9 @@
               </div>
             </FramedExample>
 
-            <FramedExample width={644} height={483}
-              summary="Standalone room conversation (full - non FFx user)">
+            <FramedExample width={644} height={483} dashed={true}
+                           cssClass="standalone"
+                           summary="Standalone room conversation (full - non FFx user)">
               <div className="standalone">
                 <StandaloneRoomView
                   dispatcher={dispatcher}
@@ -914,8 +935,9 @@
               </div>
             </FramedExample>
 
-            <FramedExample width={644} height={483}
-              summary="Standalone room conversation (feedback)">
+            <FramedExample width={644} height={483} dashed={true}
+                           cssClass="standalone"
+                           summary="Standalone room conversation (feedback)">
               <div className="standalone">
                 <StandaloneRoomView
                   dispatcher={dispatcher}
@@ -925,7 +947,8 @@
               </div>
             </FramedExample>
 
-            <FramedExample width={644} height={483}
+            <FramedExample width={644} height={483} dashed={true}
+                           cssClass="standalone"
                            summary="Standalone room conversation (failed)">
               <div className="standalone">
                 <StandaloneRoomView
@@ -937,7 +960,7 @@
           </Section>
 
           <Section name="StandaloneRoomView (Mobile)">
-            <FramedExample width={600} height={480}
+            <FramedExample width={600} height={480} cssClass="standalone"
                            onContentsRendered={updatingActiveRoomStore.forcedUpdate}
                            summary="Standalone room conversation (has-participants, 600x480)">
                 <div className="standalone">
@@ -950,10 +973,25 @@
                     remotePosterUrl="sample-img/video-screen-remote.png" />
                 </div>
             </FramedExample>
+
+            <FramedExample width={600} height={480}
+                           onContentsRendered={updatingSharingRoomStore.forcedUpdate}
+              summary="Standalone room convo (has-participants, receivingScreenShare, 600x480)">
+                <div className="standalone" cssClass="standalone">
+                  <StandaloneRoomView
+                    dispatcher={dispatcher}
+                    activeRoomStore={updatingSharingRoomStore}
+                    roomState={ROOM_STATES.HAS_PARTICIPANTS}
+                    isFirefox={true}
+                    localPosterUrl="sample-img/video-screen-local.png"
+                    remotePosterUrl="sample-img/video-screen-remote.png"
+                    screenSharePosterUrl="sample-img/video-screen-terminal.png" />
+                </div>
+            </FramedExample>
           </Section>
 
           <Section name="TextChatView (standalone)">
-            <FramedExample width={200} height={400}
+            <FramedExample width={200} height={400} cssClass="standalone"
                           summary="Standalone Text Chat conversation (200 x 400)">
               <div className="standalone text-chat-example">
                 <TextChatView

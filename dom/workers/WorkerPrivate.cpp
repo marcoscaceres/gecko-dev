@@ -763,7 +763,14 @@ struct WorkerStructuredCloneCallbacks
   FreeTransfer(uint32_t aTag, JS::TransferableOwnership aOwnership,
                void *aContent, uint64_t aExtraData, void* aClosure)
   {
-    // Nothing to do.
+    if (aTag == SCTAG_DOM_MAP_MESSAGEPORT) {
+      MOZ_ASSERT(aClosure);
+      MOZ_ASSERT(!aContent);
+      auto* closure = static_cast<WorkerStructuredCloneClosure*>(aClosure);
+
+      MOZ_ASSERT(aExtraData < closure->mMessagePortIdentifiers.Length());
+      dom::MessagePort::ForceClose(closure->mMessagePortIdentifiers[aExtraData]);
+    }
   }
 };
 
@@ -5962,11 +5969,13 @@ WorkerPrivate::AddFeature(JSContext* aCx, WorkerFeature* aFeature)
   }
 
   MOZ_ASSERT(!mFeatures.Contains(aFeature), "Already know about this one!");
-  mFeatures.AppendElement(aFeature);
 
-  return mFeatures.Length() == 1 ?
-         ModifyBusyCountFromWorker(aCx, true) :
-         true;
+  if (mFeatures.IsEmpty() && !ModifyBusyCountFromWorker(aCx, true)) {
+    return false;
+  }
+
+  mFeatures.AppendElement(aFeature);
+  return true;
 }
 
 void

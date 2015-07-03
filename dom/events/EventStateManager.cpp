@@ -3385,7 +3385,7 @@ EventStateManager::RemoteQueryContentEvent(WidgetEvent* aEvent)
 TabParent*
 EventStateManager::GetCrossProcessTarget()
 {
-  return TabParent::GetIMETabParent();
+  return IMEStateManager::GetActiveTabParent();
 }
 
 bool
@@ -3396,7 +3396,7 @@ EventStateManager::IsTargetCrossProcess(WidgetGUIEvent* aEvent)
   nsIContent *focusedContent = GetFocusedContent();
   if (focusedContent && focusedContent->IsEditable())
     return false;
-  return TabParent::GetIMETabParent() != nullptr;
+  return IMEStateManager::GetActiveTabParent() != nullptr;
 }
 
 void
@@ -3708,18 +3708,8 @@ EventStateManager::IsHandlingUserInput()
   }
 
   TimeDuration timeout = nsContentUtils::HandlingUserInputTimeout();
-  TimeDuration elapsed = TimeStamp::Now() - sHandlingInputStart;
-  bool inTime = timeout <= TimeDuration(0) || elapsed <= timeout;
-
-  if (!inTime) {
-#ifdef DEBUG
-    printf("EventStateManager::IsHandlingUserInput() has timed out "
-           "(timeout: %f, elapsed: %f)\n",
-           timeout.ToMilliseconds(), elapsed.ToMilliseconds());
-#endif
-    return false;
-  }
-  return true;
+  return timeout <= TimeDuration(0) ||
+         (TimeStamp::Now() - sHandlingInputStart) <= timeout;
 }
 
 static void

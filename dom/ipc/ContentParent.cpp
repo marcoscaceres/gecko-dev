@@ -1693,7 +1693,7 @@ ContentParent::ShutDownProcess(ShutDownMethod aMethod)
     using mozilla::dom::quota::QuotaManager;
 
     if (QuotaManager* quotaManager = QuotaManager::Get()) {
-        quotaManager->AbortCloseStoragesForProcess(this);
+        quotaManager->AbortOperationsForProcess(mChildID);
     }
 
     // If Close() fails with an error, we'll end up back in this function, but
@@ -2100,7 +2100,7 @@ ContentParent::StartForceKillTimer()
         return;
     }
 
-    int32_t timeoutSecs = Preferences::GetInt("dom.ipc.tabs.shutdownTimeoutSecs", 5);
+    int32_t timeoutSecs = Preferences::GetInt("dom.ipc.tabs.shutdownTimeoutSecs", 0);
     if (timeoutSecs > 0) {
         mForceKillTimer = do_CreateInstance("@mozilla.org/timer;1");
         MOZ_ASSERT(mForceKillTimer);
@@ -4834,6 +4834,26 @@ ContentParent::RecvGetFileReferences(const PersistenceType& aPersistenceType,
                                        aResult);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return false;
+    }
+
+    return true;
+}
+
+bool
+ContentParent::RecvFlushPendingFileDeletions()
+{
+    nsRefPtr<IndexedDatabaseManager> mgr = IndexedDatabaseManager::Get();
+    if (NS_WARN_IF(!mgr)) {
+        return false;
+    }
+
+    if (NS_WARN_IF(!mgr->IsMainProcess())) {
+        return false;
+    }
+
+    nsresult rv = mgr->FlushPendingFileDeletions();
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+        return false;
     }
 
     return true;

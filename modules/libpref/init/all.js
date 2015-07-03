@@ -375,6 +375,7 @@ pref("media.navigator.permission.disabled", false);
 pref("media.peerconnection.default_iceservers", "[]");
 pref("media.peerconnection.ice.loopback", false); // Set only for testing in offline environments.
 pref("media.peerconnection.ice.tcp", false);
+pref("media.peerconnection.ice.link_local", false); // Set only for testing IPV6 in networks that don't assign IPV6 addresses
 pref("media.peerconnection.use_document_iceservers", true);
 pref("media.peerconnection.identity.enabled", true);
 pref("media.peerconnection.identity.timeout", 10000);
@@ -1272,6 +1273,9 @@ pref("network.http.referer.XOriginPolicy", 0);
 // Controls whether we send HTTPS referres to other HTTPS sites.
 // By default this is enabled for compatibility (see bug 141641)
 pref("network.http.sendSecureXSiteReferrer", true);
+
+// Controls whether referrer attributes in <a>, <img>, <area>, and <iframe> are honoured
+pref("network.http.enablePerElementReferrer", false);
 
 // Maximum number of consecutive redirects before aborting.
 pref("network.http.redirection-limit", 20);
@@ -2247,6 +2251,9 @@ pref("layout.css.background-blend-mode.enabled", true);
 
 // Is support for CSS vertical text enabled?
 pref("layout.css.vertical-text.enabled", true);
+
+// Is support for CSS text-combine-upright (tate-chu-yoko) enabled?
+pref("layout.css.text-combine-upright.enabled", false);
 
 // Is support for object-fit and object-position enabled?
 pref("layout.css.object-fit-and-position.enabled", true);
@@ -4227,11 +4234,7 @@ pref("layers.offmainthreadcomposition.testing.enabled", false);
 pref("layers.offmainthreadcomposition.force-basic", false);
 
 // Whether to animate simple opacity and transforms on the compositor
-#ifdef RELEASE_BUILD
-pref("layers.offmainthreadcomposition.async-animations", false);
-#else
 pref("layers.offmainthreadcomposition.async-animations", true);
-#endif
 
 // Whether to log information about off main thread animations to stderr
 pref("layers.offmainthreadcomposition.log-animations", false);

@@ -184,6 +184,7 @@ WEBIDL_FILES = [
     'HTMLDocument.webidl',
     'HTMLElement.webidl',
     'HTMLEmbedElement.webidl',
+    'HTMLExtAppElement.webidl',
     'HTMLFieldSetElement.webidl',
     'HTMLFontElement.webidl',
     'HTMLFormControlsCollection.webidl',
@@ -611,6 +612,7 @@ if CONFIG['MOZ_WEBSPEECH']:
         'SpeechRecognitionResult.webidl',
         'SpeechRecognitionResultList.webidl',
         'SpeechSynthesis.webidl',
+        'SpeechSynthesisErrorEvent.webidl',
         'SpeechSynthesisEvent.webidl',
         'SpeechSynthesisUtterance.webidl',
         'SpeechSynthesisVoice.webidl',
@@ -743,6 +745,7 @@ GENERATED_EVENTS_WEBIDL_FILES = [
     'DOMTransactionEvent.webidl',
     'DownloadEvent.webidl',
     'ErrorEvent.webidl',
+    'ExternalAppEvent.webidl',
     'HashChangeEvent.webidl',
     'IccChangeEvent.webidl',
     'ImageCaptureErrorEvent.webidl',
@@ -788,6 +791,7 @@ GENERATED_EVENTS_WEBIDL_FILES = [
 if CONFIG['MOZ_WEBSPEECH']:
     GENERATED_EVENTS_WEBIDL_FILES += [
         'SpeechRecognitionEvent.webidl',
+        'SpeechSynthesisErrorEvent.webidl',
         'SpeechSynthesisEvent.webidl',
     ]
 

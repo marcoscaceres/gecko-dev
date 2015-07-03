@@ -8,6 +8,7 @@
 #include "mozilla/IMEStateManager.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/dom/Selection.h"
 #include "nsCaret.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
@@ -19,8 +20,6 @@
 #include "nsIPresShell.h"
 #include "nsISelection.h"
 #include "nsISelectionController.h"
-#include "nsISelectionPrivate.h"
-#include "nsIDOMRange.h"
 #include "nsIFrame.h"
 #include "nsIObjectFrame.h"
 #include "nsLayoutUtils.h"
@@ -75,16 +74,19 @@ ContentEventHandler::InitCommon()
   nsresult rv = InitBasic();
   NS_ENSURE_SUCCESS(rv, rv);
 
+  nsCOMPtr<nsISelection> sel;
   nsCopySupport::GetSelectionForCopy(mPresShell->GetDocument(),
-                                     getter_AddRefs(mSelection));
-
-  nsCOMPtr<nsIDOMRange> firstRange;
-  rv = mSelection->GetRangeAt(0, getter_AddRefs(firstRange));
-  // This shell doesn't support selection.
-  if (NS_FAILED(rv)) {
+                                     getter_AddRefs(sel));
+  mSelection = static_cast<Selection*>(sel.get());
+  if (NS_WARN_IF(!mSelection)) {
     return NS_ERROR_NOT_AVAILABLE;
   }
-  mFirstSelectedRange = static_cast<nsRange*>(firstRange.get());
+
+  // This shell doesn't support selection.
+  if (NS_WARN_IF(!mSelection->RangeCount())) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+  mFirstSelectedRange = mSelection->GetRangeAt(0);
 
   nsINode* startNode = mFirstSelectedRange->GetStartParent();
   NS_ENSURE_TRUE(startNode, NS_ERROR_FAILURE);
@@ -114,15 +116,16 @@ ContentEventHandler::Init(WidgetQueryContentEvent* aEvent)
 
   aEvent->mReply.mContentsRoot = mRootContent.get();
 
-  bool isCollapsed;
-  rv = mSelection->GetIsCollapsed(&isCollapsed);
-  NS_ENSURE_SUCCESS(rv, NS_ERROR_NOT_AVAILABLE);
-  aEvent->mReply.mHasSelection = !isCollapsed;
+  aEvent->mReply.mHasSelection = !mSelection->IsCollapsed();
 
   nsRect r;
   nsIFrame* frame = nsCaret::GetGeometry(mSelection, &r);
-  NS_ENSURE_TRUE(frame, NS_ERROR_FAILURE);
-
+  if (!frame) {
+    frame = mRootContent->GetPrimaryFrame();
+    if (NS_WARN_IF(!frame)) {
+      return NS_ERROR_FAILURE;
+    }
+  }
   aEvent->mReply.mFocusedWidget = frame->GetNearestWidget();
 
   return NS_OK;
@@ -209,10 +212,7 @@ static bool IsContentBR(nsIContent* aContent)
 
 static void ConvertToNativeNewlines(nsAFlatString& aString)
 {
-#if defined(XP_MACOSX)
-  // XXX Mac OS X doesn't use "\r".
-  aString.ReplaceSubstring(NS_LITERAL_STRING("\n"), NS_LITERAL_STRING("\r"));
-#elif defined(XP_WIN)
+#if defined(XP_WIN)
   aString.ReplaceSubstring(NS_LITERAL_STRING("\n"), NS_LITERAL_STRING("\r\n"));
 #endif
 }
@@ -331,12 +331,7 @@ ContentEventHandler::GetTextLength(nsIContent* aContent,
 {
   if (aContent->IsNodeOfType(nsINode::eTEXT)) {
     uint32_t textLengthDifference =
-#if defined(XP_MACOSX)
-      // On Mac, the length of a native newline ("\r") is equal to the length of
-      // the XP newline ("\n"), so the native length is the same as the XP
-      // length.
-      0;
-#elif defined(XP_WIN)
+#if defined(XP_WIN)
       // On Windows, the length of a native newline ("\r\n") is twice the length
       // of the XP newline ("\n"), so XP length is equal to the length of the
       // native offset plus the number of newlines encountered in the string.
@@ -361,11 +356,7 @@ ContentEventHandler::GetTextLength(nsIContent* aContent,
 
 static uint32_t ConvertToXPOffset(nsIContent* aContent, uint32_t aNativeOffset)
 {
-#if defined(XP_MACOSX)
-  // On Mac, the length of a native newline ("\r") is equal to the length of
-  // the XP newline ("\n"), so the native offset is the same as the XP offset.
-  return aNativeOffset;
-#elif defined(XP_WIN)
+#if defined(XP_WIN)
   // On Windows, the length of a native newline ("\r\n") is twice the length of
   // the XP newline ("\n"), so XP offset is equal to the length of the native
   // offset minus the number of newlines encountered in the string.
@@ -750,7 +741,7 @@ ContentEventHandler::SetRangeFromFlatTextOffset(nsRange* aRange,
     }
   }
   rv = aRange->SetEnd(mRootContent, int32_t(mRootContent->GetChildCount()));
-  NS_ASSERTION(NS_SUCCEEDED(rv), "nsIDOMRange::SetEnd failed");
+  NS_ASSERTION(NS_SUCCEEDED(rv), "nsRange::SetEnd failed");
   return rv;
 }
 
@@ -806,21 +797,17 @@ ContentEventHandler::OnQuerySelectedText(WidgetQueryContentEvent* aEvent)
                                 &aEvent->mReply.mOffset, lineBreakType);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsCOMPtr<nsIDOMNode> anchorDomNode, focusDomNode;
-  rv = mSelection->GetAnchorNode(getter_AddRefs(anchorDomNode));
-  NS_ENSURE_TRUE(anchorDomNode, NS_ERROR_FAILURE);
-  rv = mSelection->GetFocusNode(getter_AddRefs(focusDomNode));
-  NS_ENSURE_TRUE(focusDomNode, NS_ERROR_FAILURE);
+  nsCOMPtr<nsINode> anchorNode = mSelection->GetAnchorNode();
+  nsCOMPtr<nsINode> focusNode = mSelection->GetFocusNode();
+  if (NS_WARN_IF(!anchorNode) || NS_WARN_IF(!focusNode)) {
+    return NS_ERROR_FAILURE;
+  }
 
-  int32_t anchorOffset, focusOffset;
-  rv = mSelection->GetAnchorOffset(&anchorOffset);
-  NS_ENSURE_SUCCESS(rv, rv);
-  rv = mSelection->GetFocusOffset(&focusOffset);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  nsCOMPtr<nsINode> anchorNode(do_QueryInterface(anchorDomNode));
-  nsCOMPtr<nsINode> focusNode(do_QueryInterface(focusDomNode));
-  NS_ENSURE_TRUE(anchorNode && focusNode, NS_ERROR_UNEXPECTED);
+  int32_t anchorOffset = static_cast<int32_t>(mSelection->AnchorOffset());
+  int32_t focusOffset = static_cast<int32_t>(mSelection->FocusOffset());
+  if (NS_WARN_IF(anchorOffset < 0) || NS_WARN_IF(focusOffset < 0)) {
+    return NS_ERROR_FAILURE;
+  }
 
   int16_t compare = nsContentUtils::ComparePoints(anchorNode, anchorOffset,
                                                   focusNode, focusOffset);
@@ -1032,32 +1019,29 @@ ContentEventHandler::OnQueryCaretRect(WidgetQueryContentEvent* aEvent)
 
   LineBreakType lineBreakType = GetLineBreakType(aEvent);
 
+  nsRect caretRect;
+
   // When the selection is collapsed and the queried offset is current caret
   // position, we should return the "real" caret rect.
-  bool selectionIsCollapsed;
-  rv = mSelection->GetIsCollapsed(&selectionIsCollapsed);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  nsRect caretRect;
-  nsIFrame* caretFrame = nsCaret::GetGeometry(mSelection, &caretRect);
-
-  if (selectionIsCollapsed) {
-    uint32_t offset;
-    rv = GetFlatTextOffsetOfRange(mRootContent, mFirstSelectedRange, &offset,
-                                  lineBreakType);
-    NS_ENSURE_SUCCESS(rv, rv);
-    if (offset == aEvent->mInput.mOffset) {
-      if (!caretFrame) {
-        return NS_ERROR_FAILURE;
-      }
-      rv = ConvertToRootViewRelativeOffset(caretFrame, caretRect);
+  if (mSelection->IsCollapsed()) {
+    nsIFrame* caretFrame = nsCaret::GetGeometry(mSelection, &caretRect);
+    if (caretFrame) {
+      uint32_t offset;
+      rv = GetFlatTextOffsetOfRange(mRootContent, mFirstSelectedRange, &offset,
+                                    lineBreakType);
       NS_ENSURE_SUCCESS(rv, rv);
-      aEvent->mReply.mRect = LayoutDevicePixel::FromUntyped(
-        caretRect.ToOutsidePixels(caretFrame->PresContext()->AppUnitsPerDevPixel()));
-      aEvent->mReply.mWritingMode = caretFrame->GetWritingMode();
-      aEvent->mReply.mOffset = aEvent->mInput.mOffset;
-      aEvent->mSucceeded = true;
-      return NS_OK;
+      if (offset == aEvent->mInput.mOffset) {
+        rv = ConvertToRootViewRelativeOffset(caretFrame, caretRect);
+        NS_ENSURE_SUCCESS(rv, rv);
+        nscoord appUnitsPerDevPixel =
+          caretFrame->PresContext()->AppUnitsPerDevPixel();
+        aEvent->mReply.mRect = LayoutDevicePixel::FromUntyped(
+          caretRect.ToOutsidePixels(appUnitsPerDevPixel));
+        aEvent->mReply.mWritingMode = caretFrame->GetWritingMode();
+        aEvent->mReply.mOffset = aEvent->mInput.mOffset;
+        aEvent->mSucceeded = true;
+        return NS_OK;
+      }
     }
   }
 
@@ -1527,9 +1511,11 @@ ContentEventHandler::OnSelectionEvent(WidgetSelectionEvent* aEvent)
   // Get selection to manipulate
   // XXX why do we need to get them from ISM? This method should work fine
   //     without ISM.
+  nsCOMPtr<nsISelection> sel;
   nsresult rv =
-    IMEStateManager::GetFocusSelectionAndRoot(getter_AddRefs(mSelection),
+    IMEStateManager::GetFocusSelectionAndRoot(getter_AddRefs(sel),
                                               getter_AddRefs(mRootContent));
+  mSelection = static_cast<Selection*>(sel.get());
   if (rv != NS_ERROR_NOT_AVAILABLE) {
     NS_ENSURE_SUCCESS(rv, rv);
   } else {
@@ -1550,36 +1536,35 @@ ContentEventHandler::OnSelectionEvent(WidgetSelectionEvent* aEvent)
   int32_t endNodeOffset = range->EndOffset();
   AdjustRangeForSelection(mRootContent, &startNode, &startNodeOffset);
   AdjustRangeForSelection(mRootContent, &endNode, &endNodeOffset);
+  if (NS_WARN_IF(!startNode) || NS_WARN_IF(!endNode) ||
+      NS_WARN_IF(startNodeOffset < 0) || NS_WARN_IF(endNodeOffset < 0)) {
+    return NS_ERROR_UNEXPECTED;
+  }
 
-  nsCOMPtr<nsIDOMNode> startDomNode(do_QueryInterface(startNode));
-  nsCOMPtr<nsIDOMNode> endDomNode(do_QueryInterface(endNode));
-  NS_ENSURE_TRUE(startDomNode && endDomNode, NS_ERROR_UNEXPECTED);
-
-  nsCOMPtr<nsISelectionPrivate> selPrivate(do_QueryInterface(mSelection));
-  selPrivate->StartBatchChanges();
+  mSelection->StartBatchChanges();
 
   // Clear selection first before setting
   rv = mSelection->RemoveAllRanges();
   // Need to call EndBatchChanges at the end even if call failed
   if (NS_SUCCEEDED(rv)) {
     if (aEvent->mReversed) {
-      rv = mSelection->Collapse(endDomNode, endNodeOffset);
+      rv = mSelection->Collapse(endNode, endNodeOffset);
     } else {
-      rv = mSelection->Collapse(startDomNode, startNodeOffset);
+      rv = mSelection->Collapse(startNode, startNodeOffset);
     }
     if (NS_SUCCEEDED(rv) &&
-        (startDomNode != endDomNode || startNodeOffset != endNodeOffset)) {
+        (startNode != endNode || startNodeOffset != endNodeOffset)) {
       if (aEvent->mReversed) {
-        rv = mSelection->Extend(startDomNode, startNodeOffset);
+        rv = mSelection->Extend(startNode, startNodeOffset);
       } else {
-        rv = mSelection->Extend(endDomNode, endNodeOffset);
+        rv = mSelection->Extend(endNode, endNodeOffset);
       }
     }
   }
-  selPrivate->EndBatchChanges();
+  mSelection->EndBatchChanges();
   NS_ENSURE_SUCCESS(rv, rv);
 
-  selPrivate->ScrollIntoViewInternal(
+  mSelection->ScrollIntoViewInternal(
     nsISelectionController::SELECTION_FOCUS_REGION,
     false, nsIPresShell::ScrollAxis(), nsIPresShell::ScrollAxis());
   aEvent->mSucceeded = true;

@@ -6146,7 +6146,7 @@ nsWindow::GetSurfaceForGdkDrawable(GdkDrawable* aDrawable,
 }
 #endif
 
-TemporaryRef<DrawTarget>
+already_AddRefed<DrawTarget>
 nsWindow::StartRemoteDrawing()
 {
   gfxASurface *surf = GetThebesSurface();
@@ -6576,4 +6576,10 @@ nsWindow::SynthesizeNativeMouseScrollEvent(mozilla::LayoutDeviceIntPoint aPoint,
   gdk_event_put(&event);
 
   return NS_OK;
+}
+
+int32_t
+nsWindow::RoundsWidgetCoordinatesTo()
+{
+    return GdkScaleFactor();
 }

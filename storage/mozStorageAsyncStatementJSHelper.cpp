@@ -48,7 +48,7 @@ AsyncStatementJSHelper::getParams(AsyncStatement *aStatement,
     JS::RootedObject scope(aCtx, aScopeObj);
     nsCOMPtr<nsIXPConnectJSObjectHolder> holder;
     nsCOMPtr<nsIXPConnect> xpc(Service::getXPConnect());
-    rv = xpc->WrapNative(
+    rv = xpc->WrapNativeHolder(
       aCtx,
       ::JS_GetGlobalForObject(aCtx, scope),
       params,
@@ -66,7 +66,7 @@ AsyncStatementJSHelper::getParams(AsyncStatement *aStatement,
   obj = aStatement->mStatementParamsHolder->GetJSObject();
   NS_ENSURE_STATE(obj);
 
-  *_params = OBJECT_TO_JSVAL(obj);
+  _params->setObject(*obj);
   return NS_OK;
 }
 

@@ -2701,6 +2701,7 @@ ServiceWorkerManager::CreateServiceWorkerForWindow(nsPIDOMWindow* aWindow,
                                            NS_ConvertUTF8toUTF16(aInfo->ScriptSpec()),
                                            false,
                                            WorkerPrivate::OverrideLoadGroup,
+                                           WorkerTypeService,
                                            &loadInfo);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
@@ -3550,7 +3551,7 @@ ServiceWorkerManager::DispatchFetchEvent(const OriginAttributes& aOriginAttribut
   if (!isNavigation) {
     MOZ_ASSERT(aDoc);
     aRv = GetDocumentController(aDoc->GetInnerWindow(), getter_AddRefs(serviceWorker));
-    clientInfo = new ServiceWorkerClientInfo(aDoc);
+    clientInfo = new ServiceWorkerClientInfo(aDoc, aDoc->GetWindow());
   } else {
     nsCOMPtr<nsIChannel> internalChannel;
     aRv = aChannel->GetChannel(getter_AddRefs(internalChannel));
@@ -3923,7 +3924,7 @@ EnumControlledDocuments(nsISupports* aKey,
     return PL_DHASH_NEXT;
   }
 
-  ServiceWorkerClientInfo clientInfo(document);
+  ServiceWorkerClientInfo clientInfo(document, document->GetWindow());
   data->mDocuments.AppendElement(clientInfo);
 
   return PL_DHASH_NEXT;

@@ -144,7 +144,7 @@ public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(LocalSourceStreamInfo)
 
 private:
-  TemporaryRef<MediaPipeline> ForgetPipelineByTrackId_m(
+  already_AddRefed<MediaPipeline> ForgetPipelineByTrackId_m(
       const std::string& trackId);
 };
 
@@ -231,9 +231,6 @@ class PeerConnectionMedia : public sigslot::has_slots<> {
                 const std::vector<NrIceTurnServer>& turn_servers);
   // WARNING: This destroys the object!
   void SelfDestruct();
-
-  // Configure the ability to use localhost.
-  void SetAllowIceLoopback(bool val) { mAllowIceLoopback = val; }
 
   RefPtr<NrIceCtx> ice_ctx() const { return mIceCtx; }
 
@@ -490,9 +487,6 @@ class PeerConnectionMedia : public sigslot::has_slots<> {
   nsTArray<nsRefPtr<RemoteSourceStreamInfo> > mRemoteSourceStreams;
 
   std::map<size_t, std::pair<bool, RefPtr<MediaSessionConduit>>> mConduits;
-
-  // Allow loopback for ICE.
-  bool mAllowIceLoopback;
 
   // ICE objects
   RefPtr<NrIceCtx> mIceCtx;

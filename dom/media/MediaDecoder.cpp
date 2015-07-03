@@ -58,15 +58,20 @@ PRLogModuleInfo* gMediaDecoderLog;
 #define DECODER_LOG(x, ...) \
   MOZ_LOG(gMediaDecoderLog, LogLevel::Debug, ("Decoder=%p " x, this, ##__VA_ARGS__))
 
-static const char* const gPlayStateStr[] = {
-  "START",
-  "LOADING",
-  "PAUSED",
-  "PLAYING",
-  "SEEKING",
-  "ENDED",
-  "SHUTDOWN"
-};
+static const char*
+ToPlayStateStr(MediaDecoder::PlayState aState)
+{
+  switch (aState) {
+    case MediaDecoder::PLAY_STATE_START:    return "START";
+    case MediaDecoder::PLAY_STATE_LOADING:  return "LOADING";
+    case MediaDecoder::PLAY_STATE_PAUSED:   return "PAUSED";
+    case MediaDecoder::PLAY_STATE_PLAYING:  return "PLAYING";
+    case MediaDecoder::PLAY_STATE_ENDED:    return "ENDED";
+    case MediaDecoder::PLAY_STATE_SHUTDOWN: return "SHUTDOWN";
+    default: MOZ_ASSERT_UNREACHABLE("Invalid playState.");
+  }
+  return "UNKNOWN";
+}
 
 class MediaMemoryTracker : public nsIMemoryReporter
 {
@@ -124,6 +129,7 @@ void
 MediaDecoder::InitStatics()
 {
   AbstractThread::InitStatics();
+  SharedThreadPool::InitStatics();
 
   // Log modules.
   gMediaDecoderLog = PR_NewLogModule("MediaDecoder");
@@ -135,7 +141,7 @@ MediaDecoder::InitStatics()
 
 NS_IMPL_ISUPPORTS(MediaMemoryTracker, nsIMemoryReporter)
 
-NS_IMPL_ISUPPORTS(MediaDecoder, nsIObserver)
+NS_IMPL_ISUPPORTS0(MediaDecoder)
 
 void MediaDecoder::NotifyOwnerActivityChanged()
 {
@@ -161,7 +167,7 @@ void MediaDecoder::UpdateDormantState(bool aDormantTimeout, bool aActivity)
       mPlayState == PLAY_STATE_SHUTDOWN ||
       !mOwner->GetVideoFrameContainer() ||
       (mOwner->GetMediaElement() && mOwner->GetMediaElement()->IsBeingDestroyed()) ||
-      !mDecoderStateMachine->IsDormantNeeded())
+      !mDormantSupported)
   {
     return;
   }
@@ -329,9 +335,12 @@ bool MediaDecoder::IsInfinite()
 MediaDecoder::MediaDecoder() :
   mWatchManager(this, AbstractThread::MainThread()),
   mBuffered(AbstractThread::MainThread(), TimeIntervals(), "MediaDecoder::mBuffered (Mirror)"),
+  mStateMachineIsShutdown(AbstractThread::MainThread(), true,
+                          "MediaDecoder::mStateMachineIsShutdown (Mirror)"),
   mNextFrameStatus(AbstractThread::MainThread(),
                    MediaDecoderOwner::NEXT_FRAME_UNINITIALIZED,
                    "MediaDecoder::mNextFrameStatus (Mirror)"),
+  mDormantSupported(false),
   mDecoderPosition(0),
   mPlaybackPosition(0),
   mLogicalPosition(0.0),
@@ -385,6 +394,9 @@ MediaDecoder::MediaDecoder() :
 
   // mDuration
   mWatchManager.Watch(mStateMachineDuration, &MediaDecoder::DurationChanged);
+
+  // mStateMachineIsShutdown
+  mWatchManager.Watch(mStateMachineIsShutdown, &MediaDecoder::ShutdownBitChanged);
 
   // readyState
   mWatchManager.Watch(mPlayState, &MediaDecoder::UpdateReadyState);
@@ -806,18 +818,6 @@ void MediaDecoder::PlaybackEnded()
   }
 }
 
-NS_IMETHODIMP MediaDecoder::Observe(nsISupports *aSubjet,
-                                        const char *aTopic,
-                                        const char16_t *someData)
-{
-  MOZ_ASSERT(NS_IsMainThread());
-  if (strcmp(aTopic, NS_XPCOM_SHUTDOWN_OBSERVER_ID) == 0) {
-    Shutdown();
-  }
-
-  return NS_OK;
-}
-
 MediaDecoder::Statistics
 MediaDecoder::GetStatistics()
 {
@@ -856,7 +856,7 @@ double MediaDecoder::ComputePlaybackRate(bool* aReliable)
   int64_t length = mResource ? mResource->GetLength() : -1;
   if (!IsNaN(mDuration) && !mozilla::IsInfinite<double>(mDuration) && length >= 0) {
     *aReliable = true;
-    return length * mDuration;
+    return length / mDuration;
   }
   return mPlaybackStatistics->GetRateAtLastStop(aReliable);
 }
@@ -1018,7 +1018,7 @@ void MediaDecoder::ChangeState(PlayState aState)
   }
 
   DECODER_LOG("ChangeState %s => %s",
-              gPlayStateStr[mPlayState], gPlayStateStr[aState]);
+              ToPlayStateStr(mPlayState), ToPlayStateStr(aState));
   mPlayState = aState;
 
   if (mPlayState == PLAY_STATE_PLAYING) {
@@ -1159,8 +1159,7 @@ void MediaDecoder::SetFragmentEndTime(double aTime)
 {
   MOZ_ASSERT(NS_IsMainThread());
   if (mDecoderStateMachine) {
-    ReentrantMonitorAutoEnter mon(GetReentrantMonitor());
-    mDecoderStateMachine->SetFragmentEndTime(static_cast<int64_t>(aTime * USECS_PER_S));
+    mDecoderStateMachine->DispatchSetFragmentEndTime(static_cast<int64_t>(aTime * USECS_PER_S));
   }
 }
 
@@ -1260,11 +1259,13 @@ MediaDecoder::SetStateMachine(MediaDecoderStateMachine* aStateMachine)
   if (mDecoderStateMachine) {
     mStateMachineDuration.Connect(mDecoderStateMachine->CanonicalDuration());
     mBuffered.Connect(mDecoderStateMachine->CanonicalBuffered());
+    mStateMachineIsShutdown.Connect(mDecoderStateMachine->CanonicalIsShutdown());
     mNextFrameStatus.Connect(mDecoderStateMachine->CanonicalNextFrameStatus());
     mCurrentPosition.Connect(mDecoderStateMachine->CanonicalCurrentPosition());
   } else {
     mStateMachineDuration.DisconnectIfConnected();
     mBuffered.DisconnectIfConnected();
+    mStateMachineIsShutdown.DisconnectIfConnected();
     mNextFrameStatus.DisconnectIfConnected();
     mCurrentPosition.DisconnectIfConnected();
   }
@@ -1342,8 +1343,9 @@ MediaDecoder::NotifyWaitingForResourcesStatusChanged()
 }
 
 bool MediaDecoder::IsShutdown() const {
+  MOZ_ASSERT(NS_IsMainThread());
   NS_ENSURE_TRUE(GetStateMachine(), true);
-  return GetStateMachine()->IsShutdown();
+  return mStateMachineIsShutdown;
 }
 
 // Drop reference to state machine.  Only called during shutdown dance.

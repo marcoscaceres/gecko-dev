@@ -65,7 +65,7 @@ DrawTargetD2D1::~DrawTargetD2D1()
   }
 }
 
-TemporaryRef<SourceSurface>
+already_AddRefed<SourceSurface>
 DrawTargetD2D1::Snapshot()
 {
   if (mSnapshot) {
@@ -333,30 +333,39 @@ DrawTargetD2D1::CopySurface(SourceSurface *aSurface,
     return;
   }
 
-  if (mFormat == SurfaceFormat::A8) {
-    RefPtr<ID2D1Bitmap> bitmap;
-    image->QueryInterface((ID2D1Bitmap**)byRef(bitmap));
+  RefPtr<ID2D1Bitmap> bitmap;
+  image->QueryInterface((ID2D1Bitmap**)byRef(bitmap));
 
-    mDC->PushAxisAlignedClip(D2D1::RectF(aDestination.x, aDestination.y,
-                                         aDestination.x + aSourceRect.width,
-                                         aDestination.y + aSourceRect.height),
-                             D2D1_ANTIALIAS_MODE_ALIASED);
-    mDC->Clear();
-    mDC->PopAxisAlignedClip();
-
+  if (bitmap && mFormat == SurfaceFormat::A8) {
     RefPtr<ID2D1SolidColorBrush> brush;
     mDC->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::White),
                                D2D1::BrushProperties(), byRef(brush));
     mDC->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);
+    mDC->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_COPY);
     mDC->FillOpacityMask(bitmap, brush, D2D1_OPACITY_MASK_CONTENT_GRAPHICS);
     mDC->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+    mDC->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_SOURCE_OVER);
+    return;
+  }
+
+  Rect srcRect(Float(aSourceRect.x), Float(aSourceRect.y),
+               Float(aSourceRect.width), Float(aSourceRect.height));
+
+  Rect dstRect(Float(aDestination.x), Float(aDestination.y),
+               Float(aSourceRect.width), Float(aSourceRect.height));
+
+  if (bitmap) {
+    mDC->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_COPY);
+    mDC->DrawBitmap(bitmap, D2DRect(dstRect), 1.0f,
+                    D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR,
+                    D2DRect(srcRect));
+    mDC->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_SOURCE_OVER);
     return;
   }
 
   mDC->DrawImage(image, D2D1::Point2F(Float(aDestination.x), Float(aDestination.y)),
-                 D2D1::RectF(Float(aSourceRect.x), Float(aSourceRect.y), 
-                             Float(aSourceRect.XMost()), Float(aSourceRect.YMost())),
-                 D2D1_INTERPOLATION_MODE_NEAREST_NEIGHBOR, D2D1_COMPOSITE_MODE_BOUNDED_SOURCE_COPY);
+                 D2DRect(srcRect), D2D1_INTERPOLATION_MODE_NEAREST_NEIGHBOR,
+                 D2D1_COMPOSITE_MODE_BOUNDED_SOURCE_COPY);
 }
 
 void
@@ -705,7 +714,7 @@ DrawTargetD2D1::PopClip()
   mPushedClips.pop_back();
 }
 
-TemporaryRef<SourceSurface>
+already_AddRefed<SourceSurface>
 DrawTargetD2D1::CreateSourceSurfaceFromData(unsigned char *aData,
                                             const IntSize &aSize,
                                             int32_t aStride,
@@ -725,7 +734,7 @@ DrawTargetD2D1::CreateSourceSurfaceFromData(unsigned char *aData,
   return MakeAndAddRef<SourceSurfaceD2D1>(bitmap.get(), mDC, aFormat, aSize);
 }
 
-TemporaryRef<DrawTarget>
+already_AddRefed<DrawTarget>
 DrawTargetD2D1::CreateSimilarDrawTarget(const IntSize &aSize, SurfaceFormat aFormat) const
 {
   RefPtr<DrawTargetD2D1> dt = new DrawTargetD2D1();
@@ -737,7 +746,7 @@ DrawTargetD2D1::CreateSimilarDrawTarget(const IntSize &aSize, SurfaceFormat aFor
   return dt.forget();
 }
 
-TemporaryRef<PathBuilder>
+already_AddRefed<PathBuilder>
 DrawTargetD2D1::CreatePathBuilder(FillRule aFillRule) const
 {
   RefPtr<ID2D1PathGeometry> path;
@@ -762,7 +771,7 @@ DrawTargetD2D1::CreatePathBuilder(FillRule aFillRule) const
   return MakeAndAddRef<PathBuilderD2D>(sink, path, aFillRule, BackendType::DIRECT2D1_1);
 }
 
-TemporaryRef<GradientStops>
+already_AddRefed<GradientStops>
 DrawTargetD2D1::CreateGradientStops(GradientStop *rawStops, uint32_t aNumStops, ExtendMode aExtendMode) const
 {
   if (aNumStops == 0) {
@@ -793,7 +802,7 @@ DrawTargetD2D1::CreateGradientStops(GradientStop *rawStops, uint32_t aNumStops, 
   return MakeAndAddRef<GradientStopsD2D>(stopCollection, Factory::GetDirect3D11Device());
 }
 
-TemporaryRef<FilterNode>
+already_AddRefed<FilterNode>
 DrawTargetD2D1::CreateFilter(FilterType aType)
 {
   return FilterNodeD2D1::Create(mDC, aType);
@@ -1198,7 +1207,7 @@ DrawTargetD2D1::GetDeviceSpaceClipRect(D2D1_RECT_F& aClipRect, bool& aIsPixelAli
   return true;
 }
 
-TemporaryRef<ID2D1Geometry>
+already_AddRefed<ID2D1Geometry>
 DrawTargetD2D1::GetClippedGeometry(IntRect *aClipBounds)
 {
   if (mCurrentClippedGeometry) {
@@ -1289,7 +1298,7 @@ DrawTargetD2D1::GetClippedGeometry(IntRect *aClipBounds)
   return clippedGeometry.forget();
 }
 
-TemporaryRef<ID2D1Geometry>
+already_AddRefed<ID2D1Geometry>
 DrawTargetD2D1::GetInverseClippedGeometry()
 {
   IntRect bounds;
@@ -1355,13 +1364,13 @@ DrawTargetD2D1::PopClipsFromDC(ID2D1DeviceContext *aDC)
   }
 }
 
-TemporaryRef<ID2D1Brush>
+already_AddRefed<ID2D1Brush>
 DrawTargetD2D1::CreateTransparentBlackBrush()
 {
   return GetSolidColorBrush(D2D1::ColorF(0, 0));
 }
 
-TemporaryRef<ID2D1SolidColorBrush>
+already_AddRefed<ID2D1SolidColorBrush>
 DrawTargetD2D1::GetSolidColorBrush(const D2D_COLOR_F& aColor)
 {
   RefPtr<ID2D1SolidColorBrush> brush = mSolidColorBrush;
@@ -1369,7 +1378,7 @@ DrawTargetD2D1::GetSolidColorBrush(const D2D_COLOR_F& aColor)
   return brush.forget();
 }
 
-TemporaryRef<ID2D1Brush>
+already_AddRefed<ID2D1Brush>
 DrawTargetD2D1::CreateBrushForPattern(const Pattern &aPattern, Float aAlpha)
 {
   if (!IsPatternSupportedByD2D(aPattern)) {
@@ -1513,7 +1522,7 @@ DrawTargetD2D1::CreateBrushForPattern(const Pattern &aPattern, Float aAlpha)
   return CreateTransparentBlackBrush();
 }
 
-TemporaryRef<ID2D1Image>
+already_AddRefed<ID2D1Image>
 DrawTargetD2D1::GetImageForSurface(SourceSurface *aSurface, Matrix &aSourceTransform,
                                    ExtendMode aExtendMode, const IntRect* aSourceRect)
 {
@@ -1543,7 +1552,7 @@ DrawTargetD2D1::GetImageForSurface(SourceSurface *aSurface, Matrix &aSourceTrans
   return image.forget();
 }
 
-TemporaryRef<SourceSurface>
+already_AddRefed<SourceSurface>
 DrawTargetD2D1::OptimizeSourceSurface(SourceSurface* aSurface) const
 {
   if (aSurface->GetType() == SurfaceType::D2D1_1_IMAGE) {

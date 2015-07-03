@@ -459,7 +459,8 @@ WebGLContext::CopyTexSubImage2D_base(TexImageTarget texImageTarget, GLint level,
             tex->SetImageInfo(texImageTarget, level, width, height, 1,
                       effectiveInternalFormat,
                       WebGLImageDataStatus::UninitializedImageData);
-            tex->EnsureNoUninitializedImageData(texImageTarget, level);
+            if (!tex->EnsureInitializedImageData(texImageTarget, level))
+                return;
         }
 
         // if we are completely outside of the framebuffer, we can exit now with our black texture
@@ -607,7 +608,8 @@ WebGLContext::CopyTexSubImage2D(GLenum rawTexImgTarget,
         if (coversWholeImage) {
             tex->SetImageDataStatus(texImageTarget, level, WebGLImageDataStatus::InitializedImageData);
         } else {
-            tex->EnsureNoUninitializedImageData(texImageTarget, level);
+            if (!tex->EnsureInitializedImageData(texImageTarget, level))
+                return;
         }
     }
 
@@ -1129,8 +1131,12 @@ WebGLContext::GetFramebufferAttachmentParameter(JSContext* cx,
         return JS::NullValue();
     }
 
-    if (IsExtensionEnabled(WebGLExtensionID::WEBGL_draw_buffers))
+    if (IsExtensionEnabled(WebGLExtensionID::WEBGL_draw_buffers) &&
+        attachment >= LOCAL_GL_COLOR_ATTACHMENT0 &&
+        attachment <= LOCAL_GL_COLOR_ATTACHMENT15)
+    {
         fb->EnsureColorAttachPoints(attachment - LOCAL_GL_COLOR_ATTACHMENT0);
+    }
 
     MakeContextCurrent();
 
@@ -3062,7 +3068,8 @@ WebGLContext::CompressedTexSubImage2D(GLenum rawTexImgTarget, GLint level, GLint
         if (coversWholeImage) {
             tex->SetImageDataStatus(texImageTarget, level, WebGLImageDataStatus::InitializedImageData);
         } else {
-            tex->EnsureNoUninitializedImageData(texImageTarget, level);
+            if (!tex->EnsureInitializedImageData(texImageTarget, level))
+                return;
         }
     }
 
@@ -3535,7 +3542,8 @@ WebGLContext::TexSubImage2D_base(GLenum rawImageTarget, GLint level,
         if (coversWholeImage) {
             tex->SetImageDataStatus(texImageTarget, level, WebGLImageDataStatus::InitializedImageData);
         } else {
-            tex->EnsureNoUninitializedImageData(texImageTarget, level);
+            if (!tex->EnsureInitializedImageData(texImageTarget, level))
+                return;
         }
     }
     MakeContextCurrent();

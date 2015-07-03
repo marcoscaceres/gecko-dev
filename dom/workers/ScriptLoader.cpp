@@ -10,6 +10,7 @@
 #include "nsIContentPolicy.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsIHttpChannel.h"
+#include "nsIHttpChannelInternal.h"
 #include "nsIInputStreamPump.h"
 #include "nsIIOService.h"
 #include "nsIProtocolHandler.h"
@@ -96,6 +97,7 @@ ChannelFromScriptURL(nsIPrincipal* principal,
                      const nsAString& aScriptURL,
                      bool aIsMainScript,
                      WorkerScriptType aWorkerScriptType,
+                     nsContentPolicyType aContentPolicyType,
                      nsIChannel** aChannel)
 {
   AssertIsOnMainThread();
@@ -112,7 +114,7 @@ ChannelFromScriptURL(nsIPrincipal* principal,
   // If we're part of a document then check the content load policy.
   if (parentDoc) {
     int16_t shouldLoad = nsIContentPolicy::ACCEPT;
-    rv = NS_CheckContentLoadPolicy(nsIContentPolicy::TYPE_SCRIPT, uri,
+    rv = NS_CheckContentLoadPolicy(aContentPolicyType, uri,
                                    principal, parentDoc,
                                    NS_LITERAL_CSTRING("text/javascript"),
                                    nullptr, &shouldLoad,
@@ -167,7 +169,7 @@ ChannelFromScriptURL(nsIPrincipal* principal,
                        uri,
                        parentDoc,
                        nsILoadInfo::SEC_NORMAL,
-                       nsIContentPolicy::TYPE_SCRIPT,
+                       aContentPolicyType,
                        loadGroup,
                        nullptr, // aCallbacks
                        flags,
@@ -182,7 +184,7 @@ ChannelFromScriptURL(nsIPrincipal* principal,
                        uri,
                        principal,
                        nsILoadInfo::SEC_NORMAL,
-                       nsIContentPolicy::TYPE_SCRIPT,
+                       aContentPolicyType,
                        loadGroup,
                        nullptr, // aCallbacks
                        flags,
@@ -840,7 +842,9 @@ private:
     if (!channel) {
       rv = ChannelFromScriptURL(principal, baseURI, parentDoc, loadGroup, ios,
                                 secMan, loadInfo.mURL, IsMainWorkerScript(),
-                                mWorkerScriptType, getter_AddRefs(channel));
+                                mWorkerScriptType,
+                                mWorkerPrivate->ContentPolicyType(),
+                                getter_AddRefs(channel));
       if (NS_WARN_IF(NS_FAILED(rv))) {
         return rv;
       }
@@ -865,6 +869,16 @@ private:
     rv = NS_NewStreamLoader(getter_AddRefs(loader), this);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
+    }
+
+    // If we are loading a script for a ServiceWorker then we must not
+    // try to intercept it.  If the interception matches the current
+    // ServiceWorker's scope then we could deadlock the load.
+    if (mWorkerPrivate->IsServiceWorker()) {
+      nsCOMPtr<nsIHttpChannelInternal> internal = do_QueryInterface(channel);
+      if (internal) {
+        internal->ForceNoIntercept();
+      }
     }
 
     if (loadInfo.mCacheStatus != ScriptLoadInfo::ToBeCached) {
@@ -1578,6 +1592,8 @@ public:
       scriptloader::ChannelFromScriptURLMainThread(principal, baseURI,
                                                    parentDoc, loadGroup,
                                                    mScriptURL,
+                                                   // Nested workers are always dedicated.
+                                                   nsIContentPolicy::TYPE_INTERNAL_WORKER,
                                                    getter_AddRefs(channel));
     if (NS_SUCCEEDED(mResult)) {
       channel.forget(mChannel);
@@ -1789,6 +1805,7 @@ ChannelFromScriptURLMainThread(nsIPrincipal* aPrincipal,
                                nsIDocument* aParentDoc,
                                nsILoadGroup* aLoadGroup,
                                const nsAString& aScriptURL,
+                               nsContentPolicyType aContentPolicyType,
                                nsIChannel** aChannel)
 {
   AssertIsOnMainThread();
@@ -1799,7 +1816,8 @@ ChannelFromScriptURLMainThread(nsIPrincipal* aPrincipal,
   NS_ASSERTION(secMan, "This should never be null!");
 
   return ChannelFromScriptURL(aPrincipal, aBaseURI, aParentDoc, aLoadGroup,
-                              ios, secMan, aScriptURL, true, WorkerScript, aChannel);
+                              ios, secMan, aScriptURL, true, WorkerScript,
+                              aContentPolicyType, aChannel);
 }
 
 nsresult

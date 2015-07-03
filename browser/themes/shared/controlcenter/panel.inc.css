@@ -1,13 +1,12 @@
 #identity-popup-securityView:not(.verifiedIdentity) > #identity-popup-content-owner,
 #identity-popup-securityView:not(.verifiedIdentity):not(.verifiedDomain) > #identity-popup-content-verifier,
-#identity-popup-securityView:not(.verifiedIdentity):not(.mixedContent) > #identity-popup-content-supplemental,
+#identity-popup-securityView:not(.unknownIdentity):not(.verifiedIdentity):not(.mixedContent) > #identity-popup-content-supplemental,
 #identity-popup-security-content:not(.verifiedIdentity):not(.verifiedDomain) > .identity-popup-connection-secure,
 #identity-popup-securityView:not(.verifiedIdentity):not(.verifiedDomain) > #identity-popup-securityView-header > .identity-popup-connection-secure,
 #identity-popup-securityView:not(.unknownIdentity) > #identity-popup-securityView-header > .identity-popup-connection-not-secure,
 #identity-popup-securityView:not(.chromeUI) > #identity-popup-securityView-header > .identity-popup-connection-internal,
 #identity-popup-security-content:not(.unknownIdentity) > .identity-popup-connection-not-secure,
 #identity-popup-securityView:not(.verifiedIdentity) > #identity-popup-securityView-connection,
-#identity-popup-security-content.unknownIdentity:not(.mixedContent) + .identity-popup-expander,
 #identity-popup-security-content:not(.chromeUI) > .identity-popup-connection-internal,
 #identity-popup-security-content.chromeUI + .identity-popup-expander {
   display: none;
@@ -16,7 +15,7 @@
 /* PANEL */
 
 #identity-popup,
-.panel-viewstack[viewtype="main"] > .panel-mainview[panelid=identity-popup] > #identity-popup-mainView {
+.panel-viewstack[viewtype="main"]:not([transitioning]) > .panel-mainview[panelid=identity-popup] > #identity-popup-mainView {
   /* Tiny hack to ensure the panel shrinks back to its original
      size after closing a subview that is bigger than the main view. */
   max-height: 0;
@@ -56,7 +55,8 @@
 
 #identity-popup-securityView,
 #identity-popup-security-content,
-#identity-popup-permissions-content {
+#identity-popup-permissions-content,
+#tracking-protection-content {
   padding: 0.75em 0 1em;
   -moz-padding-start: calc(2em + 24px);
   -moz-padding-end: 1em;
@@ -67,8 +67,35 @@
 
 #identity-popup-securityView:-moz-locale-dir(rtl),
 #identity-popup-security-content:-moz-locale-dir(rtl),
-#identity-popup-permissions-content:-moz-locale-dir(rtl) {
+#identity-popup-permissions-content:-moz-locale-dir(rtl),
+#tracking-protection-content:-moz-locale-dir(rtl) {
   background-position: calc(100% - 1em) 1em;
+}
+
+/* IN-CONTENT-PREF STYLE BUTTONS */
+
+.identity-popup-button {
+  -moz-appearance: none;
+  margin: 5px 0;
+  height: 30px;
+  color: #333;
+  line-height: 20px;
+  border: 1px solid #c1c1c1;
+  border-radius: 2px;
+  background-color: #fbfbfb;
+}
+
+.identity-popup-button:not([disabled="true"]):hover {
+  background-color: #ebebeb;
+}
+
+.identity-popup-button:not([disabled="true"]):hover:active {
+  background-color: #dadada;
+}
+
+.identity-popup-button[disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 /* EXPAND BUTTON */
@@ -181,6 +208,11 @@
   background-image: url(chrome://browser/skin/controlcenter/conn-secure-ev.svg);
 }
 
+#identity-popup-securityView.mixedActiveContent,
+#identity-popup-security-content.mixedActiveContent {
+  background-image: url(chrome://browser/skin/controlcenter/mcb-disabled.svg);
+}
+
 #identity-popup-securityView-header {
   border-bottom: 1px solid #e5e5e5;
   padding-bottom: 1em;
@@ -198,6 +230,31 @@
 #identity-popup-content-owner,
 #identity-popup-securityView > #identity-popup-securityView-connection.identity-popup-text {
   margin-top: 1em;
+}
+
+/* TRACKING PROTECTION */
+
+#tracking-protection-content {
+  background-image: url("chrome://browser/skin/controlcenter/tracking-protection.svg");
+}
+
+#tracking-protection-content[block-disabled]  {
+  background-image: url("chrome://browser/skin/controlcenter/tracking-protection-disabled.svg");
+}
+
+#tracking-action-block,
+#tracking-action-unblock {
+  margin: 1em 0 0;
+}
+
+#tracking-protection-content[block-active] > #tracking-not-detected,
+#tracking-protection-content[block-disabled] > #tracking-not-detected,
+#tracking-protection-content:not([block-active]) > #tracking-blocked,
+#tracking-protection-content:not([block-active]) #tracking-action-unblock,
+#tracking-protection-content:not([block-disabled]) > #tracking-loaded,
+#tracking-protection-content:not([block-disabled]) #tracking-action-block,
+#tracking-protection-content:not([block-active]):not([block-disabled]) > #tracking-actions {
+  display: none;
 }
 
 /* PERMISSIONS */

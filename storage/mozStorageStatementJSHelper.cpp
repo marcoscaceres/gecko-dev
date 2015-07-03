@@ -71,7 +71,7 @@ stepFunc(JSContext *aCtx,
     return false;
   }
 
-  *_vp = BOOLEAN_TO_JSVAL(hasMore);
+  _vp->setBoolean(hasMore);
   return true;
 }
 
@@ -101,7 +101,7 @@ StatementJSHelper::getRow(Statement *aStatement,
 
     nsCOMPtr<nsIXPConnectJSObjectHolder> holder;
     nsCOMPtr<nsIXPConnect> xpc(Service::getXPConnect());
-    rv = xpc->WrapNative(
+    rv = xpc->WrapNativeHolder(
       aCtx,
       ::JS_GetGlobalForObject(aCtx, scope),
       row,
@@ -118,7 +118,7 @@ StatementJSHelper::getRow(Statement *aStatement,
   obj = aStatement->mStatementRowHolder->GetJSObject();
   NS_ENSURE_STATE(obj);
 
-  *_row = OBJECT_TO_JSVAL(obj);
+  _row->setObject(*obj);
   return NS_OK;
 }
 
@@ -146,7 +146,7 @@ StatementJSHelper::getParams(Statement *aStatement,
 
     nsCOMPtr<nsIXPConnectJSObjectHolder> holder;
     nsCOMPtr<nsIXPConnect> xpc(Service::getXPConnect());
-    rv = xpc->WrapNative(
+    rv = xpc->WrapNativeHolder(
       aCtx,
       ::JS_GetGlobalForObject(aCtx, scope),
       params,
@@ -164,7 +164,7 @@ StatementJSHelper::getParams(Statement *aStatement,
   obj = aStatement->mStatementParamsHolder->GetJSObject();
   NS_ENSURE_STATE(obj);
 
-  *_params = OBJECT_TO_JSVAL(obj);
+  _params->setObject(*obj);
   return NS_OK;
 }
 

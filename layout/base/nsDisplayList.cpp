@@ -71,6 +71,7 @@
 #include "nsISelection.h"
 #include "nsDOMTokenList.h"
 #include "mozilla/RuleNodeCacheConditions.h"
+#include "nsCSSProps.h"
 
 // GetCurrentTime is defined in winbase.h as zero argument macro forwarding to
 // GetTickCount().
@@ -514,14 +515,11 @@ nsDisplayListBuilder::AddAnimationsAndTransitionsToLayer(Layer* aLayer,
     RestyleManager::GetMaxAnimationGenerationForFrame(aFrame);
   aLayer->SetAnimationGeneration(animationGeneration);
 
-  nsIContent* content = aFrame->GetContent();
-  if (!content) {
-    return;
-  }
+  nsPresContext* presContext = aFrame->PresContext();
   AnimationCollection* transitions =
-    nsTransitionManager::GetAnimationsForCompositor(content, aProperty);
+    presContext->TransitionManager()->GetAnimationsForCompositor(aFrame, aProperty);
   AnimationCollection* animations =
-    nsAnimationManager::GetAnimationsForCompositor(content, aProperty);
+    presContext->AnimationManager()->GetAnimationsForCompositor(aFrame, aProperty);
 
   if (!animations && !transitions) {
     return;
@@ -722,8 +720,7 @@ void nsDisplayListBuilder::MarkOutOfFlowFrameForDisplay(nsIFrame* aDirtyFrame,
   nsRect overflowRect = aFrame->GetVisualOverflowRect();
 
   if (aFrame->IsTransformed() &&
-      nsLayoutUtils::HasAnimationsForCompositor(aFrame->GetContent(),
-                                                eCSSProperty_transform)) {
+      nsLayoutUtils::HasAnimationsForCompositor(aFrame, eCSSProperty_transform)) {
    /**
     * Add a fuzz factor to the overflow rectangle so that elements only just
     * out of view are pulled into the display list, so they can be
@@ -2519,7 +2516,7 @@ nsDisplayBackgroundImage::ConfigureLayer(ImageLayer* aLayer,
   if (imageWidth > 0 && imageHeight > 0) {
     // We're actually using the ImageContainer. Let our frame know that it
     // should consider itself to have painted successfully.
-    nsDisplayBackgroundGeometry::UpdateDrawResult(this, DrawResult::SUCCESS);
+    nsDisplayBackgroundGeometry::UpdateDrawResult(this, mozilla::image::DrawResult::SUCCESS);
   }
 
   // XXX(seth): Right now we ignore aParameters.Scale() and
@@ -2696,7 +2693,7 @@ nsDisplayBackgroundImage::PaintInternal(nsDisplayListBuilder* aBuilder,
   uint32_t flags = aBuilder->GetBackgroundPaintFlags();
   CheckForBorderItem(this, flags);
 
-  DrawResult result =
+  mozilla::image::DrawResult result =
     nsCSSRendering::PaintBackground(mFrame->PresContext(), *aCtx, mFrame,
                                     aBounds,
                                     nsRect(offset, mFrame->GetSize()),
@@ -3855,11 +3852,8 @@ nsDisplayOpacity::NeedsActiveLayer(nsDisplayListBuilder* aBuilder)
   if (ActiveLayerTracker::IsStyleAnimated(aBuilder, mFrame, eCSSProperty_opacity) &&
       !IsItemTooSmallForActiveLayer(this))
     return true;
-  if (mFrame->GetContent()) {
-    if (nsLayoutUtils::HasAnimationsForCompositor(mFrame->GetContent(),
-                                                  eCSSProperty_opacity)) {
-      return true;
-    }
+  if (nsLayoutUtils::HasAnimationsForCompositor(mFrame, eCSSProperty_opacity)) {
+    return true;
   }
   return false;
 }
@@ -5086,9 +5080,7 @@ nsDisplayTransform::ShouldPrerenderTransformedContent(nsDisplayListBuilder* aBui
   // might have only just had its transform animated in which case
   // the ActiveLayerManager may not have been notified yet.
   if (!ActiveLayerTracker::IsStyleMaybeAnimated(aFrame, eCSSProperty_transform) &&
-      (!aFrame->GetContent() ||
-       !nsLayoutUtils::HasAnimationsForCompositor(aFrame->GetContent(),
-                                                  eCSSProperty_transform))) {
+      !nsLayoutUtils::HasAnimationsForCompositor(aFrame, eCSSProperty_transform)) {
     if (aLogAnimations) {
       nsCString message;
       message.AppendLiteral("Performance warning: Async animation disabled because frame was not marked active for transform animation");
@@ -5244,11 +5236,8 @@ nsDisplayTransform::GetLayerState(nsDisplayListBuilder* aBuilder,
   if (ActiveLayerTracker::IsStyleAnimated(aBuilder, mFrame, eCSSProperty_transform) &&
       !IsItemTooSmallForActiveLayer(this))
     return LAYER_ACTIVE;
-  if (mFrame->GetContent()) {
-    if (nsLayoutUtils::HasAnimationsForCompositor(mFrame->GetContent(),
-                                                  eCSSProperty_transform)) {
-      return LAYER_ACTIVE;
-    }
+  if (nsLayoutUtils::HasAnimationsForCompositor(mFrame, eCSSProperty_transform)) {
+    return LAYER_ACTIVE;
   }
 
   const nsStyleDisplay* disp = mFrame->StyleDisplay();

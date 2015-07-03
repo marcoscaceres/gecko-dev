@@ -219,7 +219,6 @@ PeerConnectionMedia::PeerConnectionMedia(PeerConnectionImpl *parent)
     : mParent(parent),
       mParentHandle(parent->GetHandle()),
       mParentName(parent->GetName()),
-      mAllowIceLoopback(false),
       mIceCtx(nullptr),
       mDNSResolver(new NrIceResolver()),
       mUuidGen(MakeUnique<PCUuidGenerator>()),
@@ -311,8 +310,9 @@ nsresult PeerConnectionMedia::Init(const std::vector<NrIceStunServer>& stun_serv
   mIceCtx = NrIceCtx::Create("PC:" + mParentName,
                              true, // Offerer
                              true, // Explicitly set priorities
-                             mAllowIceLoopback,
-                             ice_tcp);
+                             mParent->GetAllowIceLoopback(),
+                             ice_tcp,
+                             mParent->GetAllowIceLinkLocal());
   if(!mIceCtx) {
     CSFLogError(logTag, "%s: Failed to create Ice Context", __FUNCTION__);
     return NS_ERROR_FAILURE;
@@ -1316,7 +1316,7 @@ RefPtr<MediaPipeline> SourceStreamInfo::GetPipelineByTrackId_m(
   return nullptr;
 }
 
-TemporaryRef<MediaPipeline>
+already_AddRefed<MediaPipeline>
 LocalSourceStreamInfo::ForgetPipelineByTrackId_m(const std::string& trackId)
 {
   ASSERT_ON_THREAD(mParent->GetMainThread());

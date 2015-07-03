@@ -277,7 +277,6 @@ public:
   typedef MediaPromise<SeekResolveValue, bool /* aIgnored */, /* IsExclusive = */ true> SeekPromise;
 
   NS_DECL_THREADSAFE_ISUPPORTS
-  NS_DECL_NSIOBSERVER
 
   // Enumeration for the valid play states (see mPlayState)
   enum PlayState {
@@ -896,12 +895,21 @@ protected:
   // Buffered range, mirrored from the reader.
   Mirror<media::TimeIntervals> mBuffered;
 
+  // Whether the state machine is shut down.
+  Mirror<bool> mStateMachineIsShutdown;
+
+  // Used by the ogg decoder to watch mStateMachineIsShutdown.
+  virtual void ShutdownBitChanged() {}
+
   // NextFrameStatus, mirrored from the state machine.
   Mirror<MediaDecoderOwner::NextFrameStatus> mNextFrameStatus;
 
   /******
    * The following members should be accessed with the decoder lock held.
    ******/
+
+  // Whether the decoder implementation supports dormant mode.
+  bool mDormantSupported;
 
   // Current decoding position in the stream. This is where the decoder
   // is up to consuming the stream. This is not adjusted during decoder

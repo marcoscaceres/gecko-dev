@@ -49,7 +49,7 @@ interface nsIJSRAIIHelper;
 interface nsIContentPermissionRequest;
 interface nsIObserver;
 
-[scriptable, uuid(42c529d8-54cf-4158-8b09-13ca89d7a88c)]
+[scriptable, uuid(336a8683-5626-4512-a3d5-ec280c13e5c2)]
 interface nsIDOMWindowUtils : nsISupports {
 
   /**
@@ -1545,6 +1545,8 @@ interface nsIDOMWindowUtils : nsISupports {
                             [optional] out long aDBRefCnt,
                             [optional] out long aSliceRefCnt);
 
+  void flushPendingFileDeletions();
+
   /**
    * Return whether incremental GC has been disabled due to a binary add-on.
    */
@@ -1744,7 +1746,8 @@ interface nsIDOMWindowUtils : nsISupports {
     * If the property is NOT currently being animated on the compositor thread,
     * returns an empty string.
     */
-   AString getOMTAStyle(in nsIDOMElement aElement, in AString aProperty);
+   AString getOMTAStyle(in nsIDOMElement aElement, in AString aProperty,
+                        [optional] in AString aPseudoElement);
 
    /**
     * Special function that gets a property syncronously from the last composite

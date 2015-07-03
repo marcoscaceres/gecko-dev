@@ -798,7 +798,7 @@ gfxWindowsPlatform::CreateOffscreenSurface(const IntSize& size,
     return surf.forget();
 }
 
-TemporaryRef<ScaledFont>
+already_AddRefed<ScaledFont>
 gfxWindowsPlatform::GetScaledFontForFont(DrawTarget* aTarget, gfxFont *aFont)
 {
     if (aFont->GetType() == gfxFont::FONT_TYPE_DWRITE) {
@@ -2026,6 +2026,10 @@ gfxWindowsPlatform::InitD3D11Devices()
 
     mD3D11ContentDevice->SetExceptionMode(0);
 
+    nsRefPtr<ID3D10Multithread> multi;
+    mD3D11ContentDevice->QueryInterface(__uuidof(ID3D10Multithread), getter_AddRefs(multi));
+    multi->SetMultithreadProtected(TRUE);
+
     Factory::SetDirect3D11Device(mD3D11ContentDevice);
   }
 
@@ -2058,7 +2062,7 @@ gfxWindowsPlatform::InitD3D11Devices()
   d3d11Module.disown();
 }
 
-TemporaryRef<ID3D11Device>
+already_AddRefed<ID3D11Device>
 gfxWindowsPlatform::CreateD3D11DecoderDevice()
 {
   nsModuleHandle d3d11Module(LoadLibrarySystem32(L"d3d11.dll"));

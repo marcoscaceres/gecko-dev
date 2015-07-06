@@ -597,7 +597,7 @@ EventStateManager::PreHandleEvent(nsPresContext* aPresContext,
     // window edge) wont update the cursor if the cached value and the current
     // cursor match. So when the mouse exits a remote frame, clear the cached
     // widget cursor so a proper update will occur when the mouse re-enters.
-    if (XRE_GetProcessType() == GeckoProcessType_Content) {
+    if (XRE_IsContentProcess()) {
       ClearCachedWidgetCursor(mCurrentTarget);
     }
 
@@ -841,21 +841,6 @@ EventStateManager::PreHandleEvent(nsPresContext* aPresContext,
       DoQuerySelectedText(&selectedText);
       NS_ASSERTION(selectedText.mSucceeded, "Failed to get selected text");
       compositionEvent->mData = selectedText.mReply.mString;
-    }
-    // through to compositionend handling
-  case NS_COMPOSITION_END:
-  case NS_COMPOSITION_CHANGE:
-  case NS_COMPOSITION_COMMIT_AS_IS:
-  case NS_COMPOSITION_COMMIT:
-    {
-      WidgetCompositionEvent* compositionEvent = aEvent->AsCompositionEvent();
-      if (IsTargetCrossProcess(compositionEvent)) {
-        // Will not be handled locally, remote the event
-        if (GetCrossProcessTarget()->SendCompositionEvent(*compositionEvent)) {
-          // Cancel local dispatching
-          aEvent->mFlags.mPropagationStopped = true;
-        }
-      }
     }
     break;
   }

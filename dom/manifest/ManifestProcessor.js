@@ -110,6 +110,7 @@ ManifestProcessor.prototype = {
       ),
       'short_name': processShortNameMember(),
       'theme_color': processThemeColorMember(),
+      'icons_background_color': processIconsBackgroundColorMember(),
     };
     processedManifest.scope = processScopeMember();
     return processedManifest;
@@ -238,6 +239,17 @@ ManifestProcessor.prototype = {
         objectName: 'manifest',
         object: rawManifest,
         property: 'theme_color',
+        expectedType: 'string',
+        trim: true
+      };
+      return extractor.extractColorValue(spec);
+    }
+
+    function processIconsBackgroundColorMember() {
+      const spec = {
+        objectName: 'manifest',
+        object: rawManifest,
+        property: 'icons_background_color',
         expectedType: 'string',
         trim: true
       };

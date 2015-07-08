@@ -191,7 +191,7 @@ Site.prototype = {
       this._updateAttributes(true);
     // Capture the page if the thumbnail is missing, which will cause page.js
     // to be notified and call our refreshThumbnail() method.
-    this.captureIfMissing();
+    this.captureIfMissing({});
     // but still display whatever thumbnail might be available now.
     this.refreshThumbnail();
   },
@@ -217,7 +217,9 @@ Site.prototype = {
    */
   captureIfMissing: function Site_captureIfMissing() {
     if (!document.hidden && !this.link.imageURI) {
-      BackgroundPageThumbs.captureIfMissing(this.url);
+      let rect = this._node.getBoundingClientRect();
+      let dimensions = {width: rect.width, height: rect.height};
+      BackgroundPageThumbs.captureIfMissing(this.url, dimensions);
     }
   },
 

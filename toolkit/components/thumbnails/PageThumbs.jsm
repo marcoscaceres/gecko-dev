@@ -33,6 +33,9 @@ Cu.import("resource://gre/modules/PromiseWorker.jsm", this);
 Cu.import("resource://gre/modules/Promise.jsm", this);
 Cu.import("resource://gre/modules/osfile.jsm", this);
 
+XPCOMUtils.defineLazyModuleGetter(this, "BackgroundPageThumbs",
+ "resource://gre/modules/BackgroundPageThumbs.jsm");
+
 XPCOMUtils.defineLazyModuleGetter(this, "NetUtil",
   "resource://gre/modules/NetUtil.jsm");
 
@@ -264,6 +267,13 @@ this.PageThumbs = {
       return;
     }
 
+    dump(
+      `
+      ******************************
+GENERATING IN PROCESS THUMBNAIL!!!
+      ************************************
+      `
+    )
     // Generate in-process content thumbnail
     let [width, height, scale] =
       PageThumbUtils.determineCropSize(aBrowser.contentWindow, aCanvas);
@@ -296,6 +306,12 @@ this.PageThumbs = {
    * @return a promise
    */
   _captureRemoteThumbnail: function (aBrowser, aCanvas) {
+    dump(`
+      $%%%%%%%%%%% _captureRemoteThumbnail CANVAS SIZE %%%%%%%%%%%%%%%%%%
+          width: ${aCanvas.width},
+          height: ${aCanvas.height},
+      %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    `);
     let deferred = Promise.defer();
 
     // The index we send with the request so we can identify the
@@ -311,8 +327,15 @@ this.PageThumbs = {
       if (aMsg.data.id != index) {
         return;
       }
-
       mm.removeMessageListener("Browser:Thumbnail:Response", thumbFunc);
+      // If it has a manifest, request it in the background instead
+      if (aMsg.data.hasManifest) {
+        BackgroundPageThumbs.captureIfMissing(aMsg.data.url, {
+          width: aCanvas.width,
+          height: aCanvas.height,
+        });
+        return;
+      }
       let imageBlob = aMsg.data.thumbnail;
       let doc = aBrowser.parentElement.ownerDocument;
       let reader = Cc["@mozilla.org/files/filereader;1"].

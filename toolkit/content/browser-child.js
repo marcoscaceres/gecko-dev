@@ -8,12 +8,16 @@ let Cu = Components.utils;
 
 Cu.import("resource://gre/modules/AppConstants.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
-Cu.import('resource://gre/modules/XPCOMUtils.jsm');
+Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/RemoteAddonsChild.jsm");
 Cu.import("resource://gre/modules/Timer.jsm");
+Cu.import('resource://gre/modules/Task.jsm');
 
 XPCOMUtils.defineLazyModuleGetter(this, "PageThumbUtils",
   "resource://gre/modules/PageThumbUtils.jsm");
+
+XPCOMUtils.defineLazyModuleGetter(this, "ManifestFinder",
+  "resource://gre/modules/ManifestFinder.jsm");
 
 if (AppConstants.MOZ_CRASHREPORTER) {
   XPCOMUtils.defineLazyServiceGetter(this, "CrashReporter",
@@ -461,7 +465,25 @@ addMessageListener("UpdateCharacterSet", function (aMessage) {
 /**
  * Remote thumbnail request handler for PageThumbs thumbnails.
  */
-addMessageListener("Browser:Thumbnail:Request", function (aMessage) {
+addMessageListener("Browser:Thumbnail:Request", Task.async(function* (aMessage) {
+  dump(`
+==============
+  browser-child.js
+  Browser:Thumbnail:Request
+  Generating thumbnail for ${content.location.href}.
+===============
+  `)
+  let finder = new ManifestFinder();
+  let hasManifest = yield finder.hasManifestLink(content);
+  if (hasManifest) {
+    sendAsyncMessage("Browser:Thumbnail:Response", {
+      id: aMessage.data.id,
+      hasManifest: true,
+      url: content.location.href
+    });
+    return;
+  }
+
   let thumbnail = content.document.createElementNS(PageThumbUtils.HTML_NAMESPACE,
                                                    "canvas");
   thumbnail.mozOpaque = true;
@@ -484,10 +506,11 @@ addMessageListener("Browser:Thumbnail:Request", function (aMessage) {
   thumbnail.toBlob(function (aBlob) {
     sendAsyncMessage("Browser:Thumbnail:Response", {
       thumbnail: aBlob,
-      id: aMessage.data.id
+      id: aMessage.data.id,
+      hasManifest: false,
     });
   });
-});
+}));
 
 /**
  * Remote isSafeForCapture request handler for PageThumbs.

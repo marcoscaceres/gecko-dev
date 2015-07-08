@@ -39,6 +39,20 @@ this.PageThumbUtils = {
     canvas.height = thumbnailHeight;
     return canvas;
   },
+  /**
+   * Creates a new image element in the context of aWindow, or if aWindow
+   * is undefined, in the context of hiddenDOMWindow.
+   *
+   * @param aWindow (optional) The document of this window will be used to
+   *  create the image.  If not given, the hidden window will be used.
+   * @return The newly created image.
+   */
+  createImage: function (aWindow) {
+    let doc = (aWindow || Services.appShell.hiddenDOMWindow).document;
+    let img = doc.createElementNS(this.HTML_NAMESPACE, "img");
+    //images can get natural width/height when loaded
+    return img;
+  },
 
   /**
    * Calculates a preferred initial thumbnail size based on current desktop

@@ -46,8 +46,17 @@ const BackgroundPageThumbs = {
    * @opt timeout    The capture will time out after this many milliseconds have
    *                 elapsed after the capture has progressed to the head of
    *                 the queue and started.  Defaults to 30000 (30 seconds).
+   * @opt width      The width of the thumbnail.
+   * @opt height     The height of the thumbnail.
    */
-  capture: function (url, options={}) {
+  capture: function (url, options={width: 320, height: 240}) {
+      dump(`
+      $%%%%%%%%%%% BPT:capture() CANVAS SIZE %%%%%%%%%%%%%%%%%%
+          width: ${options.width},
+          height: ${options.height},
+          URL: ${url}
+      %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    `);
     if (!PageThumbs._prefEnabled()) {
       if (options.onDone)
         schedule(() => options.onDone(url));
@@ -70,7 +79,7 @@ const BackgroundPageThumbs = {
     let cap = new Capture(url, this._onCaptureOrTimeout.bind(this), options);
     this._captureQueue.push(cap);
     this._capturesByURL.set(url, cap);
-    this._processCaptureQueue();
+    this._processCaptureQueue(options.width, options.height);
   },
 
   /**
@@ -85,6 +94,11 @@ const BackgroundPageThumbs = {
     // The fileExistsForURL call is an optimization, potentially but unlikely
     // incorrect, and no big deal when it is.  After the capture is done, we
     // atomically test whether the file exists before writing it.
+    dump(`
+      &&&&&&&&&&&&&&&&&& BPT::captureIfMissing() &&&&&&&&&
+      options.w/h: ${options.width} x ${options.height}
+      &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
+    `);
     PageThumbsStorage.fileExistsForURL(url).then(exists => {
       if (exists) {
         if (options.onDone)
@@ -105,7 +119,7 @@ const BackgroundPageThumbs = {
    * @return  True if the parent window is completely initialized and can be
    *          used, and false if initialization has started but not completed.
    */
-  _ensureParentWindowReady: function () {
+  _ensureParentWindowReady: function (width,height) {
     if (this._parentWin)
       // Already fully initialized.
       return true;
@@ -122,11 +136,18 @@ const BackgroundPageThumbs = {
     let iframe = hostWindow.document.createElementNS(HTML_NS, "iframe");
     iframe.setAttribute("src", "chrome://global/content/mozilla.xhtml");
     let onLoad = function onLoadFn() {
+      dump(`
+        ~~~
+        $$$$$$$$$$$$$$$$$$$ I AM AN IFRAME! %%%%%%%%%%%%%%%%%%%
+        ~~~~
+      `)
       iframe.removeEventListener("load", onLoad, true);
       this._parentWin = iframe.contentWindow;
-      this._processCaptureQueue();
+      this._processCaptureQueue(width, height);
     }.bind(this);
     iframe.addEventListener("load", onLoad, true);
+    iframe.width = width;
+    iframe.height = height;
     hostWindow.document.documentElement.appendChild(iframe);
     this._hostIframe = iframe;
 
@@ -152,9 +173,15 @@ const BackgroundPageThumbs = {
   /**
    * Creates the thumbnail browser if it doesn't already exist.
    */
-  _ensureBrowser: function () {
+  _ensureBrowser: function (width, height) {
     if (this._thumbBrowser)
       return;
+
+    dump(`
+      ********* _ensureBrowser BROWSER SIZE *************
+width: ${width}
+height: ${height}
+      `)
 
     let browser = this._parentWin.document.createElementNS(XUL_NS, "browser");
     browser.setAttribute("type", "content");
@@ -171,8 +198,14 @@ const BackgroundPageThumbs = {
     let bwidth = Math.min(1024, swidth.value);
     // Setting the width and height attributes doesn't work -- the resulting
     // thumbnails are blank and transparent -- but setting the style does.
-    browser.style.width = bwidth + "px";
-    browser.style.height = (bwidth * sheight.value / swidth.value) + "px";
+    browser.style.width = (width || bwidth) + "px";
+    browser.style.height = (height || (bwidth * sheight.value / swidth.value))+ "px";
+
+    dump(`
+      ********* BROWSER SIZE *************
+browser.style.width: ${browser.style.width}
+browser.style.height: ${browser.style.height}
+      `)
 
     this._parentWin.document.documentElement.appendChild(browser);
 
@@ -211,14 +244,14 @@ const BackgroundPageThumbs = {
    * Starts the next capture if the queue is not empty and the service is fully
    * initialized.
    */
-  _processCaptureQueue: function () {
+  _processCaptureQueue: function (width, height) {
     if (!this._captureQueue.length ||
         this._captureQueue[0].pending ||
-        !this._ensureParentWindowReady())
+        !this._ensureParentWindowReady(width, height))
       return;
 
     // Ready to start the first capture in the queue.
-    this._ensureBrowser();
+    this._ensureBrowser(width, height);
     this._captureQueue[0].start(this._thumbBrowser.messageManager);
     if (this._destroyBrowserTimer) {
       this._destroyBrowserTimer.cancel();
@@ -295,8 +328,12 @@ Capture.prototype = {
 
     // didCapture registration
     this._msgMan = messageManager;
-    this._msgMan.sendAsyncMessage("BackgroundPageThumbs:capture",
-                                  { id: this.id, url: this.url });
+    this._msgMan.sendAsyncMessage("BackgroundPageThumbs:capture",{
+      id: this.id,
+      url: this.url,
+      width: this.options.width,
+      width: this.options.height,
+    });
     this._msgMan.addMessageListener("BackgroundPageThumbs:didCapture", this);
   },
 
@@ -319,7 +356,7 @@ Capture.prototype = {
     }
     delete this.captureCallback;
     delete this.doneCallbacks;
-    delete this.options;
+    //delete this.options;
   },
 
   // Called when the didCapture message is received.
@@ -379,7 +416,6 @@ Capture.prototype = {
       done();
       return;
     }
-
     PageThumbs._store(this.url, data.finalURL, data.imageData, true)
               .then(done, done);
   },

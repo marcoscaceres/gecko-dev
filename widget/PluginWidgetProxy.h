@@ -18,7 +18,7 @@
 namespace mozilla {
 namespace plugins {
 class PluginWidgetChild;
-}
+} // namespace plugins
 namespace widget {
 
 class PluginWidgetProxy final : public PuppetWidget
@@ -66,8 +66,10 @@ private:
   // PuppetWidget does not implement parent apis, but we need
   // them for plugin widgets.
   nsCOMPtr<nsIWidget> mParent;
+  uintptr_t mCachedPluginPort;
 };
 
-}  // namespace widget
-}  // namespace mozilla
+} // namespace widget
+} // namespace mozilla
+
 #endif

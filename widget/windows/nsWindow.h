@@ -126,6 +126,11 @@ public:
                                     uint32_t aHotspotX, uint32_t aHotspotY);
   NS_IMETHOD              SetCursor(nsCursor aCursor);
   virtual nsresult        ConfigureChildren(const nsTArray<Configuration>& aConfigurations);
+  virtual bool PrepareForFullscreenTransition(nsISupports** aData) override;
+  virtual void PerformFullscreenTransition(FullscreenTransitionStage aStage,
+                                           uint16_t aDuration,
+                                           nsISupports* aData,
+                                           nsIRunnable* aCallback) override;
   NS_IMETHOD              MakeFullScreen(bool aFullScreen, nsIScreen* aScreen = nullptr);
   NS_IMETHOD              HideWindowChrome(bool aShouldHide);
   NS_IMETHOD              Invalidate(bool aEraseBackground = false,
@@ -330,7 +335,7 @@ protected:
   void                    ResetLayout();
   void                    InvalidateNonClientRegion();
   HRGN                    ExcludeNonClientFromPaintRegion(HRGN aRegion);
-  static void             GetMainWindowClass(nsAString& aClass);
+  static const wchar_t*   GetMainWindowClass();
   bool                    HasGlass() const {
     return mTransparencyMode == eTransparencyGlass ||
            mTransparencyMode == eTransparencyBorderlessGlass;
@@ -397,14 +402,15 @@ protected:
   void                    UserActivity();
 
   int32_t                 GetHeight(int32_t aProposedHeight);
-  void                    GetWindowClass(nsString& aWindowClass);
-  void                    GetWindowPopupClass(nsString& aWindowClass);
+  const wchar_t*          GetWindowClass() const;
+  const wchar_t*          GetWindowPopupClass() const;
   virtual DWORD           WindowStyle();
   DWORD                   WindowExStyle();
 
-  void                    RegisterWindowClass(const nsString& aClassName,
+  // This method registers the given window class, and returns the class name.
+  const wchar_t*          RegisterWindowClass(const wchar_t* aClassName,
                                               UINT aExtraStyle,
-                                              LPWSTR aIconID);
+                                              LPWSTR aIconID) const;
 
   /**
    * XP and Vista theming support for windows with rounded edges
@@ -462,6 +468,7 @@ protected:
   nsIntSize             mLastSize;
   nsIntPoint            mLastPoint;
   HWND                  mWnd;
+  HWND                  mTransitionWnd;
   WNDPROC               mPrevWndProc;
   HBRUSH                mBrush;
   bool                  mIsTopWidgetWindow;

@@ -137,17 +137,6 @@ private:
   nsRefPtr<nsConsoleService> mService;
 };
 
-typedef nsCOMArray<nsIConsoleListener> ListenerArrayType;
-
-PLDHashOperator
-CollectCurrentListeners(nsISupports* aKey, nsIConsoleListener* aValue,
-                        void* aClosure)
-{
-  ListenerArrayType* listeners = static_cast<ListenerArrayType*>(aClosure);
-  listeners->AppendObject(aValue);
-  return PL_DHASH_NEXT;
-}
-
 NS_IMETHODIMP
 LogMessageRunnable::Run()
 {
@@ -156,7 +145,7 @@ LogMessageRunnable::Run()
   // Snapshot of listeners so that we don't reenter this hash during
   // enumeration.
   nsCOMArray<nsIConsoleListener> listeners;
-  mService->EnumerateListeners(CollectCurrentListeners, &listeners);
+  mService->CollectCurrentListeners(listeners);
 
   mService->SetIsDelivering();
 
@@ -169,7 +158,7 @@ LogMessageRunnable::Run()
   return NS_OK;
 }
 
-} // anonymous namespace
+} // namespace
 
 // nsIConsoleService methods
 NS_IMETHODIMP
@@ -295,18 +284,25 @@ nsConsoleService::LogMessageWithMode(nsIConsoleMessage* aMessage,
   }
 
   if (r) {
-    NS_DispatchToMainThread(r);
+    // avoid failing in XPCShell tests
+    nsCOMPtr<nsIThread> mainThread = do_GetMainThread();
+    if (mainThread) {
+      NS_DispatchToMainThread(r.forget());
+    }
   }
 
   return NS_OK;
 }
 
 void
-nsConsoleService::EnumerateListeners(ListenerHash::EnumReadFunction aFunction,
-                                     void* aClosure)
+nsConsoleService::CollectCurrentListeners(
+  nsCOMArray<nsIConsoleListener>& aListeners)
 {
   MutexAutoLock lock(mLock);
-  mListeners.EnumerateRead(aFunction, aClosure);
+  for (auto iter = mListeners.Iter(); !iter.Done(); iter.Next()) {
+    nsIConsoleListener* value = iter.GetUserData();
+    aListeners.AppendObject(value);
+  }
 }
 
 NS_IMETHODIMP

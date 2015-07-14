@@ -220,8 +220,8 @@ XRE_ChildProcessTypeToString(GeckoProcessType aProcessType)
 namespace mozilla {
 namespace startup {
 GeckoProcessType sChildProcessType = GeckoProcessType_Default;
-}
-}
+} // namespace startup
+} // namespace mozilla
 
 void
 XRE_SetProcessType(const char* aProcessTypeString)
@@ -466,8 +466,8 @@ XRE_InitChildProcess(int aArgc,
 #ifdef MOZ_X11
   XInitThreads();
 #endif
-#if defined(MOZ_WIDGET_GTK)
-  g_thread_init(nullptr);
+#if MOZ_WIDGET_GTK == 2
+  XRE_GlibInit();
 #endif
 
 #if defined(MOZ_WIDGET_QT)
@@ -831,7 +831,8 @@ TestShellParent* GetOrCreateTestShellParent()
     }
     return tsp;
 }
-}
+
+} // namespace
 
 bool
 XRE_SendTestShellCommand(JSContext* aCx,

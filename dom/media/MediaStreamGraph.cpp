@@ -565,7 +565,7 @@ namespace {
   const uint32_t NOT_VISITED = UINT32_MAX;
   // Value of mCycleMarker for ordered streams in muted cycles.
   const uint32_t IN_MUTED_CYCLE = 1;
-}
+} // namespace
 
 void
 MediaStreamGraphImpl::UpdateStreamOrder()
@@ -601,6 +601,7 @@ MediaStreamGraphImpl::UpdateStreamOrder()
     if (CurrentDriver()->AsAudioCallbackDriver()->IsStarted()) {
       if (mLifecycleState == LIFECYCLE_RUNNING) {
         SystemClockDriver* driver = new SystemClockDriver(this);
+        mMixer.RemoveCallback(CurrentDriver()->AsAudioCallbackDriver());
         CurrentDriver()->SwitchAtNextIteration(driver);
       }
     }
@@ -1670,7 +1671,7 @@ public:
   NS_DECL_NSIOBSERVER
 };
 
-}
+} // namespace
 
 void
 MediaStreamGraphImpl::RunInStableState(bool aSourceIsMSG)
@@ -3007,7 +3008,7 @@ ForceShutdownEnumerator(const uint32_t& /* aAudioChannel */,
   return PL_DHASH_NEXT;
 }
 
-} // anonymous namespace
+} // namespace
 
 NS_IMETHODIMP
 MediaStreamGraphShutdownObserver::Observe(nsISupports *aSubject,
@@ -3456,6 +3457,7 @@ MediaStreamGraphImpl::ApplyAudioContextOperationImpl(AudioNodeStream* aStream,
         EnqueueStreamAndPromiseForOperation(aStream, aPromise, aOperation);
 
       SystemClockDriver* driver = new SystemClockDriver(this);
+      mMixer.RemoveCallback(CurrentDriver()->AsAudioCallbackDriver());
       CurrentDriver()->SwitchAtNextIteration(driver);
     } else {
       // We are closing or suspending an AudioContext, but something else is
@@ -3533,4 +3535,4 @@ ProcessedMediaStream::AddInput(MediaInputPort* aPort)
   GraphImpl()->SetStreamOrderDirty();
 }
 
-}
+} // namespace mozilla

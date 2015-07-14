@@ -47,16 +47,16 @@ class nsIURI;
 
 namespace JS {
 struct RuntimeStats;
-}
+} // namespace JS
 
 namespace mozilla {
 namespace dom {
 class Function;
-}
+} // namespace dom
 namespace ipc {
 class PrincipalInfo;
-}
-}
+} // namespace ipc
+} // namespace mozilla
 
 struct PRThread;
 
@@ -233,7 +233,7 @@ private:
                       ErrorResult& aRv);
 
   nsresult
-  DispatchPrivate(WorkerRunnable* aRunnable, nsIEventTarget* aSyncLoopTarget);
+  DispatchPrivate(already_AddRefed<WorkerRunnable>&& aRunnable, nsIEventTarget* aSyncLoopTarget);
 
 public:
   virtual JSObject*
@@ -258,19 +258,19 @@ public:
   }
 
   nsresult
-  Dispatch(WorkerRunnable* aRunnable)
+  Dispatch(already_AddRefed<WorkerRunnable>&& aRunnable)
   {
-    return DispatchPrivate(aRunnable, nullptr);
+    return DispatchPrivate(Move(aRunnable), nullptr);
   }
 
   nsresult
-  DispatchControlRunnable(WorkerControlRunnable* aWorkerControlRunnable);
+  DispatchControlRunnable(already_AddRefed<WorkerControlRunnable>&& aWorkerControlRunnable);
 
   nsresult
-  DispatchDebuggerRunnable(WorkerRunnable* aDebuggerRunnable);
+  DispatchDebuggerRunnable(already_AddRefed<WorkerRunnable>&& aDebuggerRunnable);
 
   already_AddRefed<WorkerRunnable>
-  MaybeWrapAsWorkerRunnable(nsIRunnable* aRunnable);
+  MaybeWrapAsWorkerRunnable(already_AddRefed<nsIRunnable>&& aRunnable);
 
   already_AddRefed<nsIEventTarget>
   GetEventTarget();

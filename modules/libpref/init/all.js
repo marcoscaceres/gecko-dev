@@ -208,7 +208,10 @@ pref("browser.display.force_inline_alttext", false); // true = force ALT text fo
 // 1 = use external leading only when font provides,
 // 2 = add extra leading both internal leading and external leading are zero
 pref("browser.display.normal_lineheight_calc_control", 2);
-pref("browser.display.show_image_placeholders", true); // true = show image placeholders while image is loaded and when image is broken
+// enable showing image placeholders while image is loading or when image is broken
+pref("browser.display.show_image_placeholders", true);
+// if browser.display.show_image_placeholders is true then this controls whether the loading image placeholder and border is shown or not
+pref("browser.display.show_loading_image_placeholder", false);
 // min font device pixel size at which to turn on high quality
 pref("browser.display.auto_quality_min_font_size", 20);
 pref("browser.anchor_color",                "#0000EE");
@@ -4339,6 +4342,9 @@ pref("alerts.disableSlidingEffect", false);
 pref("full-screen-api.enabled", false);
 pref("full-screen-api.allow-trusted-requests-only", true);
 pref("full-screen-api.pointer-lock.enabled", true);
+// transition duration of fade-to-black and fade-from-black, unit: ms
+pref("full-screen-api.transition-duration.enter", "400 400");
+pref("full-screen-api.transition-duration.leave", "400 400");
 
 // DOM idle observers API
 pref("dom.idle-observers-api.enabled", true);
@@ -4801,6 +4807,10 @@ pref("dom.caches.enabled", true);
 pref("camera.control.low_memory_thresholdMB", 404);
 #endif
 
+// SystemUpdate API
+pref("dom.system_update.enabled", false);
+pref("dom.system_update.debug", false);
+
 // UDPSocket API
 pref("dom.udpsocket.enabled", false);
 
@@ -4950,6 +4960,8 @@ pref("reader.toolbar.vertical", true);
 // loaded without sandboxing even if this pref is changed.
 pref("media.gmp.insecure.allow", false);
 #endif
+
+pref("dom.audiochannel.mutedByDefault", false);
 
 // Use vsync aligned rendering. b2g prefs are in b2g.js.
 // Hardware vsync supported on windows, os x, and b2g.

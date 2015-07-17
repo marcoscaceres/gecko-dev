@@ -1372,9 +1372,7 @@ var gBrowserInit = {
     placesContext.addEventListener("popuphiding", updateEditUIVisibility, false);
 #endif
 
-    gBrowser.mPanelContainer.addEventListener("InstallBrowserTheme", LightWeightThemeWebInstaller, false, true);
-    gBrowser.mPanelContainer.addEventListener("PreviewBrowserTheme", LightWeightThemeWebInstaller, false, true);
-    gBrowser.mPanelContainer.addEventListener("ResetBrowserThemePreview", LightWeightThemeWebInstaller, false, true);
+    LightWeightThemeWebInstaller.init();
 
     if (Win7Features)
       Win7Features.onOpenWindow();
@@ -1423,6 +1421,20 @@ var gBrowserInit = {
       // can check the log.
       this.gmpInstallManager.simpleCheckAndInstall().then(null, () => {});
     }, 1000 * 60);
+
+    // Report via telemetry whether we're able to play MP4/H.264/AAC video.
+    // We suspect that some Windows users have a broken or have not installed
+    // Windows Media Foundation, and we'd like to know how many. We'd also like
+    // to know how good our coverage is on other platforms.
+    // Note: we delay by 90 seconds reporting this, as calling canPlayType()
+    // on Windows will cause DLLs to load, i.e. cause disk I/O.
+    setTimeout(() => {
+      let v = document.createElementNS("http://www.w3.org/1999/xhtml", "video");
+      let aacWorks = v.canPlayType("audio/mp4") != "";
+      Services.telemetry.getHistogramById("VIDEO_CAN_CREATE_AAC_DECODER").add(aacWorks);
+      let h264Works = v.canPlayType("video/mp4") != "";
+      Services.telemetry.getHistogramById("VIDEO_CAN_CREATE_H264_DECODER").add(h264Works);
+    }, 90 * 1000);
 
     SessionStore.promiseInitialized.then(() => {
       // Bail out if the window has been closed in the meantime.
@@ -5162,6 +5174,8 @@ var TabsInTitlebar = {
         titlebarContent.style.marginBottom = extraMargin + "px";
 #endif
         titlebarContentHeight += extraMargin;
+      } else {
+        titlebarContent.style.removeProperty("margin-bottom");
       }
 
       // Then we bring up the titlebar by the same amount, but we add any negative margin:
@@ -6642,6 +6656,11 @@ var gIdentityHandler = {
     return this._identityPopupSecurityView =
       document.getElementById("identity-popup-securityView");
   },
+  get _identityPopupMainView () {
+    delete this._identityPopupMainView;
+    return this._identityPopupMainView =
+      document.getElementById("identity-popup-mainView");
+  },
   get _identityIconLabel () {
     delete this._identityIconLabel;
     return this._identityIconLabel = document.getElementById("identity-icon-label");
@@ -6987,6 +7006,7 @@ var gIdentityHandler = {
   setPopupMessages : function(newMode) {
 
     this._identityPopup.className = newMode;
+    this._identityPopupMainView.className = newMode;
     this._identityPopupSecurityView.className = newMode;
     this._identityPopupSecurityContent.className = newMode;
 
@@ -7086,11 +7106,6 @@ var gIdentityHandler = {
 
     // Add the "open" attribute to the identity box for styling
     this._identityBox.setAttribute("open", "true");
-    var self = this;
-    this._identityPopup.addEventListener("popuphidden", function onPopupHidden(e) {
-      e.currentTarget.removeEventListener("popuphidden", onPopupHidden, false);
-      self._identityBox.removeAttribute("open");
-    }, false);
 
     // Now open the popup, anchored off the primary chrome element
     this._identityPopup.openPopup(this._identityIcon, "bottomcenter topleft");
@@ -7105,6 +7120,7 @@ var gIdentityHandler = {
   onPopupHidden(event) {
     if (event.target == this._identityPopup) {
       window.removeEventListener("focus", this, true);
+      this._identityBox.removeAttribute("open");
     }
   },
 

@@ -1751,11 +1751,11 @@ var BrowserApp = {
               docShell.mixedContentChannel = null;
             }
           } else if (data.contentType === "tracking") {
+            // Convert document URI into the format used by
+            // nsChannelClassifier::ShouldEnableTrackingProtection
+            // (any scheme turned into https is correct)
+            let normalizedUrl = Services.io.newURI("https://" + browser.currentURI.hostPort, null, null);
             if (data.allowContent) {
-              // Convert document URI into the format used by
-              // nsChannelClassifier::ShouldEnableTrackingProtection
-              // (any scheme turned into https is correct)
-              let normalizedUrl = Services.io.newURI("https://" + browser.currentURI.hostPort, null, null);
               // Add the current host in the 'trackingprotection' consumer of
               // the permission manager using a normalized URI. This effectively
               // places this host on the tracking protection white list.
@@ -1765,7 +1765,7 @@ var BrowserApp = {
               // Remove the current host from the 'trackingprotection' consumer
               // of the permission manager. This effectively removes this host
               // from the tracking protection white list (any list actually).
-              Services.perms.remove(browser.currentURI, "trackingprotection");
+              Services.perms.remove(normalizedUrl, "trackingprotection");
               Telemetry.addData("TRACKING_PROTECTION_EVENTS", 2);
             }
           }
@@ -5314,6 +5314,9 @@ var BrowserEventHandler = {
         if (this._inCluster && this._clickInZoomedView != true) {
           this._clusterClicked(x, y);
         } else {
+          if (this._clickInZoomedView != true) {
+            this._closeZoomedView();
+          }
           // The _highlightElement was chosen after fluffing the touch events
           // that led to this SingleTap, so by fluffing the mouse events, they
           // should find the same target since we fluff them again below.
@@ -5342,6 +5345,12 @@ var BrowserEventHandler = {
         dump('BrowserEventHandler.handleUserEvent: unexpected topic "' + aTopic + '"');
         break;
     }
+  },
+
+  _closeZoomedView: function() {
+    Messaging.sendRequest({
+      type: "Gesture:CloseZoomedView"
+    });
   },
 
   _clusterClicked: function(aX, aY) {

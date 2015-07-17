@@ -264,7 +264,7 @@ public:
 
     static bool AsyncPanZoomEnabled();
 
-    void GetAzureBackendInfo(mozilla::widget::InfoObject &aObj) {
+    virtual void GetAzureBackendInfo(mozilla::widget::InfoObject &aObj) {
       aObj.DefineProperty("AzureCanvasBackend", GetBackendName(mPreferredCanvasBackend));
       aObj.DefineProperty("AzureSkiaAccelerated", UseAcceleratedSkiaCanvas());
       aObj.DefineProperty("AzureFallbackCanvasBackend", GetBackendName(mFallbackCanvasBackend));
@@ -479,6 +479,12 @@ public:
     virtual bool CanUseHardwareVideoDecoding();
     static bool CanUseDirect3D11ANGLE();
 
+    // Returns whether or not layers acceleration should be used.
+    bool ShouldUseLayersAcceleration();
+
+    // Returns a prioritized list of all available compositor backends.
+    void GetCompositorBackends(bool useAcceleration, nsTArray<mozilla::layers::LayersBackend>& aBackends);
+
     /**
      * Is it possible to use buffer rotation.  Note that these
      * check the preference, but also allow for the override to
@@ -636,6 +642,17 @@ protected:
      * Initialized hardware vsync based on each platform.
      */
     virtual already_AddRefed<mozilla::gfx::VsyncSource> CreateHardwareVsyncSource();
+
+    // Returns whether or not layers should be accelerated by default on this platform.
+    virtual bool AccelerateLayersByDefault();
+
+    // Returns a prioritized list of available compositor backends for acceleration.
+    virtual void GetAcceleratedCompositorBackends(nsTArray<mozilla::layers::LayersBackend>& aBackends);
+
+    // Returns whether or not the basic compositor is supported.
+    virtual bool SupportsBasicCompositor() const {
+      return true;
+    }
 
     /**
      * Initialise the preferred and fallback canvas backends

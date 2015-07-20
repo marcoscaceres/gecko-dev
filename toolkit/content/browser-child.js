@@ -11,7 +11,7 @@ Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/RemoteAddonsChild.jsm");
 Cu.import("resource://gre/modules/Timer.jsm");
-Cu.import('resource://gre/modules/Task.jsm');
+Cu.import("resource://gre/modules/Task.jsm");
 
 XPCOMUtils.defineLazyModuleGetter(this, "PageThumbUtils",
   "resource://gre/modules/PageThumbUtils.jsm");
@@ -474,7 +474,7 @@ addMessageListener("Browser:Thumbnail:Request", Task.async(function* (aMessage) 
 ===============
   `)
   let finder = new ManifestFinder();
-  let hasManifest = yield finder.hasManifestLink(content);
+  let hasManifest = yield finder.contentHasManifestLink(content);
   if (hasManifest) {
     sendAsyncMessage("Browser:Thumbnail:Response", {
       id: aMessage.data.id,

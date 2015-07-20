@@ -154,12 +154,12 @@ const backgroundPageThumbsContent = {
     `);
     let canvasDrawDate = new Date();
     let finder = new ManifestFinder();
-    let hasManifest = yield finder.hasManifestLink(content);
+    let hasManifest = yield finder.contentHasManifestLink(content);
     //It's NOT a preview or has a manifest
     if (hasManifest) {
       let obtainer = new ManifestObtainer();
       try {
-        let manifest = yield obtainer.obtainManifest(content);
+        let manifest = yield obtainer.contentObtainManifest(content);
         //try to create icon
         if (manifest.icons.length) {
           dump(`

@@ -3,7 +3,7 @@
 'use strict';
 const {
   ManifestObtainer
-} = Cu.import('resource://gre/modules/WebManifest.jsm', {});
+} = Cu.import('resource://gre/modules/ManifestObtainer.jsm', {});
 
 requestLongerTimeout(4); // e10s tests take time.
 const defaultURL =
@@ -180,7 +180,7 @@ add_task(function*() {
     const obtainer = new ManifestObtainer();
     aBrowser.contentWindowAsCPOW.document.head.innerHTML = aTest.testData;
     try {
-      const manifest = yield obtainer.obtainManifest(aBrowser);
+      const manifest = yield obtainer.browserObtainManifest(aBrowser);
       aTest.run(manifest);
     } catch (e) {
       aTest.run(e);
@@ -237,7 +237,7 @@ add_task(function*() {
   // Flood random browsers with requests. Once promises settle, check that
   // responses all pass.
   const results = yield Promise.all((
-    for (browser of randBrowsers(browsers, 100)) obtainer.obtainManifest(browser)
+    for (browser of randBrowsers(browsers, 100)) obtainer.browserObtainManifest(browser)
   ));
   const expected = 'Expect every manifest to have name equal to `pass`.';
   const pass = results.every(manifest => manifest.name === 'pass');

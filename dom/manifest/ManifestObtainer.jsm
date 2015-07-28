@@ -37,6 +37,28 @@ Cu.import("resource://gre/modules/ManifestProcessor.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "BrowserUtils",  // jshint ignore:line
   "resource://gre/modules/BrowserUtils.jsm");
 
+function toError(aErrorClone) {
+  let error;
+  switch (aErrorClone.name) {
+  case "TypeError":
+    error = new TypeError();
+    break;
+  default:
+    error = new Error();
+  }
+  Object.getOwnPropertyNames(aErrorClone)
+    .forEach(name => error[name] = aErrorClone[name]);
+  return error;
+}
+
+function isXULBrowser(aBrowser) {
+  if (!aBrowser || !aBrowser.namespaceURI || !aBrowser.localName) {
+    return false;
+  }
+  const XUL = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
+  return (aBrowser.namespaceURI === XUL && aBrowser.localName === "browser");
+}
+
 const processor = new ManifestProcessor();
 
 /**
@@ -62,6 +84,26 @@ const processResponse = Task.async(function* (aResp, aContentWindow) {
   const manifest = processor.process(args);
   return manifest;
 });
+
+/**
+ * Checks against security manager if we can load the web manifest.
+ * @param  {HTMLLinkElement} aElem The HTML element to security check.
+ * @return {Boolean} True if it can, false if it can't.
+ */
+function canLoadManifest(aElem) {
+  const contentPolicy = Cc["@mozilla.org/layout/content-policy;1"]
+    .getService(Ci.nsIContentPolicy);
+  const mimeType = aElem.type || "application/manifest+json";
+  const elemURI = BrowserUtils.makeURI(
+    aElem.href, aElem.ownerDocument.characterSet
+  );
+  const shouldLoad = contentPolicy.shouldLoad(
+    Ci.nsIContentPolicy.TYPE_WEB_MANIFEST, elemURI,
+    aElem.ownerDocument.documentURIObject,
+    aElem, mimeType, null
+  );
+  return shouldLoad === Ci.nsIContentPolicy.ACCEPT;
+}
 
 /**
  * Asynchronously fetches a web manifest.
@@ -97,26 +139,6 @@ const fetchManifest = Task.async(function* (aWindow) {
   const manifest = yield processResponse(response, aWindow);
   return manifest;
 });
-
-/**
- * Checks against security manager if we can load the web manifest.
- * @param  {HTMLLinkElement} aElem The HTML element to security check.
- * @return {Boolean} True if it can, false if it can't.
- */
-function canLoadManifest(aElem) {
-  const contentPolicy = Cc["@mozilla.org/layout/content-policy;1"]
-    .getService(Ci.nsIContentPolicy);
-  const mimeType = aElem.type || "application/manifest+json";
-  const elemURI = BrowserUtils.makeURI(
-    aElem.href, aElem.ownerDocument.characterSet
-  );
-  const shouldLoad = contentPolicy.shouldLoad(
-    Ci.nsIContentPolicy.TYPE_WEB_MANIFEST, elemURI,
-    aElem.ownerDocument.documentURIObject,
-    aElem, mimeType, null
-  );
-  return shouldLoad === Ci.nsIContentPolicy.ACCEPT;
-}
 
 /**
  * ManifestObtainer
@@ -160,28 +182,6 @@ ManifestObtainer.prototype.contentObtainManifest = Task.async(
     return manifest;
   }
 );
-
-function toError(aErrorClone) {
-  let error;
-  switch (aErrorClone.name) {
-  case "TypeError":
-    error = new TypeError();
-    break;
-  default:
-    error = new Error();
-  }
-  Object.getOwnPropertyNames(aErrorClone)
-    .forEach(name => error[name] = aErrorClone[name]);
-  return error;
-}
-
-function isXULBrowser(aBrowser) {
-  if (!aBrowser || !aBrowser.namespaceURI || !aBrowser.localName) {
-    return false;
-  }
-  const XUL = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
-  return (aBrowser.namespaceURI === XUL && aBrowser.localName === "browser");
-}
 
 this.ManifestObtainer = ManifestObtainer; // jshint ignore:line
 this.EXPORTED_SYMBOLS = ["ManifestObtainer"]; // jshint ignore:line

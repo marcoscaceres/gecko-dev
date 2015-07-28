@@ -9,42 +9,6 @@ const {
 Cu.import("resource://gre/modules/PromiseMessage.jsm");
 Cu.import("resource://gre/modules/Task.jsm");
 
-/**
- * @constructor
- */
-function ManifestFinder() {}
-
-/**
- * Check from content process if DOM Window has a conforming
- * manifest link relationship.
- * @param aContent DOM Window to check.
- * @return {Promise<Boolean>}
- */
-ManifestFinder.prototype.contentHasManifestLink = function(aContent) {
-  if (!aContent || isXULBrowser(aContent)) {
-    throw new TypeError("Invalid input.");
-  }
-  return checkForManifest(aContent);
-}
-
-/**
- * Check from a XUL browser (parent process) if it's content document has a
- * manifest link relationship.
- * @param aBrowser The XUL browser to check.
- * @return {Promise}
- */
-ManifestFinder.prototype.browserHasManifestLink = Task.async(
-  function* (aBrowser) {
-    if (!isXULBrowser(aBrowser)) {
-      throw new TypeError("Invalid input.");
-    }
-    const msgKey = "DOM:WebManifest:hasManifestLink";
-    const mm = aBrowser.messageManager;
-    const reply = yield PromiseMessage.send(mm, msgKey);
-    return reply.data.result;
-  }
-);
-
 function isXULBrowser(aBrowser) {
   if (!aBrowser || !aBrowser.namespaceURI || !aBrowser.localName) {
     return false;
@@ -65,6 +29,42 @@ function checkForManifest(aWindow) {
   }
   return true;
 }
+
+/**
+ * @constructor
+ */
+function ManifestFinder() {}
+
+/**
+ * Check from content process if DOM Window has a conforming
+ * manifest link relationship.
+ * @param aContent DOM Window to check.
+ * @return {Promise<Boolean>}
+ */
+ManifestFinder.prototype.contentHasManifestLink = function(aContent) {
+  if (!aContent || isXULBrowser(aContent)) {
+    throw new TypeError("Invalid input.");
+  }
+  return checkForManifest(aContent);
+};
+
+/**
+ * Check from a XUL browser (parent process) if it's content document has a
+ * manifest link relationship.
+ * @param aBrowser The XUL browser to check.
+ * @return {Promise}
+ */
+ManifestFinder.prototype.browserHasManifestLink = Task.async(
+  function* (aBrowser) {
+    if (!isXULBrowser(aBrowser)) {
+      throw new TypeError("Invalid input.");
+    }
+    const msgKey = "DOM:WebManifest:hasManifestLink";
+    const mm = aBrowser.messageManager;
+    const reply = yield PromiseMessage.send(mm, msgKey);
+    return reply.data.result;
+  }
+);
 
 this.EXPORTED_SYMBOLS = [ // jshint ignore:line
   "ManifestFinder"

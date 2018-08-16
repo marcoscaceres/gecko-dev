@@ -17,6 +17,7 @@ interface nsIPaymentActionCallback : nsISupports
   void respondPayment(in nsIPaymentActionResponse aResponse);
   void changeShippingAddress(in AString aRequestId, in nsIPaymentAddress aAddress);
   void changeShippingOption(in AString aRequestId, in AString aOption);
+  void changePayerDetail(in AString aRequestId, in AString aPayerName, in AString aPayerEmail, in AString aPayerPhone);
 };
 
 [builtinclass, uuid(7ddbe8be-beac-4952-96f6-619981dff7a6)]

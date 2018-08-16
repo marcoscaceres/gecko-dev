@@ -15,7 +15,7 @@ enum PaymentComplete {
 
 [SecureContext,
  Func="mozilla::dom::PaymentRequest::PrefEnabled"]
-interface PaymentResponse {
+interface PaymentResponse : EventTarget {
   [Default] object toJSON();
 
   readonly attribute DOMString       requestId;
@@ -29,4 +29,6 @@ interface PaymentResponse {
 
   [NewObject]
   Promise<void> complete(optional PaymentComplete result = "unknown");
+
+  attribute EventHandler onpayerdetailchange;
 };

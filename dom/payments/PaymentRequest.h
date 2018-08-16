@@ -119,6 +119,8 @@ public:
   bool IsUpdating() const { return mUpdating; }
   void SetUpdating(bool aUpdating);
 
+  already_AddRefed<PaymentResponse> GetResponse() const;
+
   already_AddRefed<PaymentAddress> GetShippingAddress() const;
   // Update mShippingAddress and fire shippingaddresschange event
   nsresult UpdateShippingAddress(const nsAString& aCountry,
@@ -135,6 +137,8 @@ public:
 
   void SetShippingOption(const nsAString& aShippingOption);
   void GetShippingOption(nsAString& aRetVal) const;
+  void GetOptions(PaymentOptions& aRetVal) const;
+  void SetOptions(const PaymentOptions& aOptions);
   nsresult UpdateShippingOption(const nsAString& aShippingOption);
 
   nsresult UpdatePayment(JSContext* aCx, const PaymentDetailsUpdate& aDetails,
@@ -167,6 +171,9 @@ public:
   {
     return mIPC;
   }
+
+private:
+  PaymentOptions mOptions;
 
 protected:
   ~PaymentRequest();
@@ -224,6 +231,7 @@ protected:
   } mState;
 
   PaymentRequestChild* mIPC;
+
 };
 
 } // namespace dom

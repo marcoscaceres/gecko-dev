@@ -522,6 +522,28 @@ PaymentRequestService::ChangeShippingOption(const nsAString& aRequestId,
   return NS_OK;
 }
 
+NS_IMETHODIMP
+PaymentRequestService::ChangePayerDetail(const nsAString& aRequestId,
+                                          const nsAString& aPayerName,
+                                          const nsAString& aPayerEmail,
+                                          const nsAString& aPayerPhone)
+{
+  nsCOMPtr<nsIPaymentActionCallback> callback;
+  if (!mCallbackHashtable.Get(aRequestId, getter_AddRefs(callback))) {
+    return NS_ERROR_FAILURE;
+  }
+  if (NS_WARN_IF(!callback)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  nsresult rv = callback->ChangePayerDetail(aRequestId, aPayerName, aPayerEmail, aPayerPhone);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  return NS_OK;
+}
+
 nsresult
 PaymentRequestService::SetActionCallback(const nsAString& aRequestId,
                                          nsIPaymentActionCallback* aCallback)

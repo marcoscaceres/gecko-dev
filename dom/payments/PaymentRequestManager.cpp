@@ -364,7 +364,7 @@ PaymentRequestManager::CreatePayment(JSContext* aCx,
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
-
+  request->SetOptions(aOptions);
   /*
    *  Set request's |mId| to details.id if details.id exists.
    *  Otherwise, set |mId| to internal id.
@@ -629,6 +629,17 @@ PaymentRequestManager::ChangeShippingOption(PaymentRequest* aRequest,
                                             const nsAString& aOption)
 {
   return aRequest->UpdateShippingOption(aOption);
+}
+
+nsresult
+PaymentRequestManager::ChangePayerDetail(PaymentRequest* aRequest,
+                                         const nsAString& aPayerName,
+                                         const nsAString& aPayerEmail,
+                                         const nsAString& aPayerPhone)
+{
+  RefPtr<PaymentResponse> response = aRequest->GetResponse();
+  MOZ_ASSERT(response);
+  return response->UpdatePayerDetail(aPayerName, aPayerEmail, aPayerPhone);
 }
 
 } // end of namespace dom

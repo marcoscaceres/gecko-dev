@@ -1,0 +1,98 @@
+<!DOCTYPE HTML>
+<meta charset="utf-8">
+<title>Test for PaymentResponse.prototype.onpayerdetailchange</title>
+<link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<script src="./DefaultData.js"></script>
+<script>
+SimpleTest.waitForExplicitFinish();
+const gUrl = SimpleTest.getTestFileURL("PayerDetailsChromeScript.js");
+const gScript = SpecialPowers.loadChromeScript(gUrl);
+
+function okTester(result) {
+  return message => ok(result, message);
+}
+const passListener = okTester(true);
+const failListener = okTester(false);
+
+gScript.addMessageListener("test-fail", failListener);
+gScript.addMessageListener("test-pass", passListener);
+
+function sendOnce(message) {
+  return data => {
+    return new Promise(resolve => {
+      const doneMsg = `${message}-complete`;
+      gScript.addMessageListener(doneMsg, function listener() {
+        gScript.removeMessageListener(doneMsg, listener);
+        resolve();
+      });
+      gScript.sendAsyncMessage(message, data);
+    });
+  };
+}
+const sendTearDown = sendOnce("teardown");
+
+async function testDetailChange(options, expectedChange) {
+  const handler = SpecialPowers.getDOMWindowUtils(window).setHandlingUserInput(
+    true
+  );
+  const request = new PaymentRequest(defaultMethods, defaultDetails, options);
+  const response = await request.show();
+  // initially all empty strings
+  is(response.payerName, "");
+  is(response.payerEmail, "");
+  is(response.payerPhone, "");
+  await new Promise(resolve => (response.onpayerdetailchange = resolve));
+  for (const [attribute, expectedValue] of Object.entries(expectedChange)) {
+    is(response[attribute], expectedValue);
+  }
+  handler.destruct();
+}
+
+async function teardown() {
+  await sendTearDown();
+  gScript.removeMessageListener("test-fail", failListener);
+  gScript.removeMessageListener("test-pass", passListener);
+  gScript.destroy();
+  SimpleTest.finish();
+}
+
+async function runTests() {
+  const defaultExpectedValues = {
+    payerName: "",
+    payerPhone: "",
+    payerEmail: "",
+  };
+  const paymentOptions = [
+    ["requestPayerName", { payerName: "new name" }],
+    ["requestPayerEmail", { payerEmail: "new email" }],
+    ["requestPayerPhone", { payerPhone: "new phone" }],
+  ];
+  try {
+    const options = {};
+    const expectedChanges = { ...defaultExpectedValues };
+    for (const [paymentOption, expectedChange] of paymentOptions) {
+      // single (e.g., expect "requestPayerName" to equal "new name")
+      const computedOption = { [paymentOption]: true };
+      const expectedSingle = { ...defaultExpectedValues, ...expectedChange };
+      await testDetailChange(computedOption, expectedSingle);
+      // compounded: keeps stacking the expected changes, so we test everything
+      Object.assign(options, computedOption);
+      Object.assign(expectedChanges, expectedChange);
+      await testDetailChange(options, expectedChanges);
+    }
+  } catch (err) {
+    ok(false, `Unexpected error: ${err}.`);
+  } finally {
+    await teardown();
+  }
+}
+
+window.addEventListener("load", () => {
+  const prefs = [["dom.payments.request.enabled", true]]
+  SpecialPowers.pushPrefEnv({set: prefs}, runTests);
+});
+
+</script>
+<body>
+<a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=1472026">Mozilla Bug 1472026</a>

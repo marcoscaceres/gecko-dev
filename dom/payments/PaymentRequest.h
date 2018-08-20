@@ -154,6 +154,7 @@ public:
   void
   RejectedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue) override;
 
+  IMPL_EVENT_HANDLER(merchantvalidation);
   IMPL_EVENT_HANDLER(shippingaddresschange);
   IMPL_EVENT_HANDLER(shippingoptionchange);
   IMPL_EVENT_HANDLER(paymentmethodchange);
@@ -175,6 +176,8 @@ protected:
   void UnregisterActivityObserver();
 
   nsresult DispatchUpdateEvent(const nsAString& aType);
+
+  nsresult DispatchMerchantValidationEvent(const nsAString& aType);
 
   PaymentRequest(nsPIDOMWindowInner* aWindow, const nsAString& aInternalId);
 
